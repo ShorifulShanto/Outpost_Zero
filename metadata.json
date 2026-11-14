@@ -1,0 +1,8 @@
+{
+  "name": "Outpost Zero",
+  "description": "Explore. Build. Survive. Discover. An interactive 10-Sol Mars habitat engineering simulator for young explorers aged 7-12 and space enthusiasts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

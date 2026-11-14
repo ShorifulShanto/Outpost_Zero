@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  html, body {
+    font-family: var(--font-sans);
+    background-color: #080D1B;
+    color: #EAF2FF;
+    scroll-behavior: smooth;
+    overflow-x: clip;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid #29B6F6;
+    outline-offset: 2px;
+  }
+}
+
+/* Subtle Deep Space Command starfield */
+.starfield-canvas {
+  background-color: #080D1B;
+  background-image:
+    radial-gradient(1px 1px at 24px 36px, rgba(234, 242, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 142px 88px, rgba(41, 182, 246, 0.25), transparent),
+    radial-gradient(1.5px 1.5px at 268px 44px, rgba(234, 242, 255, 0.28), transparent),
+    radial-gradient(1px 1px at 310px 175px, rgba(228, 119, 78, 0.22), transparent),
+    radial-gradient(1px 1px at 84px 210px, rgba(234, 242, 255, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 390px 128px, rgba(234, 242, 255, 0.2), transparent);
+  background-size: 440px 260px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
