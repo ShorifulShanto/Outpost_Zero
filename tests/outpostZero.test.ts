@@ -7,6 +7,7 @@ import {
   applyPowerAction,
   applyShelterAction,
   buildMissionReport,
+  configureBriefingMission,
   createInitialGameState,
   markCommunicationUsed,
   proceedToSolSummary,
@@ -23,7 +24,12 @@ import {
   RADLAB_DOSIMETRY_BENCHMARKS,
   SCIENTIFIC_DISCLAIMER,
 } from '../src/data/spaceResearchData.ts';
-import { KNOWLEDGE_QUIZ_QUESTIONS, LEARN_MODULES } from '../src/data/learnModules.ts';
+import {
+  ALL_QUIZ_QUESTIONS,
+  generateQuizBatch,
+  KNOWLEDGE_QUIZ_QUESTIONS,
+  LEARN_MODULES,
+} from '../src/data/learnModules.ts';
 import { clearNasaCache } from '../src/services/nasaCache.ts';
 import {
   fetchDonkiCmes,
@@ -37,6 +43,7 @@ import {
   fetchFeaturedMarsSurfacePhoto,
   fetchMarsImageLibrary,
   fetchNasaApod,
+  fetchRealtimeMarsRoverPhotos,
   toOneSentence,
 } from '../src/services/nasaMediaService.ts';
 import { fetchOsdrStudyCatalog } from '../src/services/nasaOsdrService.ts';
@@ -46,7 +53,9 @@ import {
   loadExplorerProgress,
   recordDomeInspected,
   recordPhotoInspected,
+  resetExplorerProgress,
 } from '../src/utils/explorerProgress.ts';
+import { getEarthMarsTelemetry } from '../src/utils/orbitalTelemetry.ts';
 import { parseAndValidateGameState } from '../src/utils/storage.ts';
 
 test('1. Initial game state is properly configured for Mars 10-Sol 4-crew outpost', () => {
@@ -463,10 +472,23 @@ test('11. Learn modules (12 lessons) and offline Knowledge Check Quiz (12 questi
   }
 
   assert.equal(KNOWLEDGE_QUIZ_QUESTIONS.length, 12);
-  for (const q of KNOWLEDGE_QUIZ_QUESTIONS) {
+  assert.ok(ALL_QUIZ_QUESTIONS.length >= 36);
+  for (const q of ALL_QUIZ_QUESTIONS) {
     assert.ok(q.correctIndex >= 0 && q.correctIndex < q.options.length);
     assert.ok(q.explanation.length > 15);
   }
+
+  const batch1 = generateQuizBatch(12);
+  assert.equal(batch1.length, 12);
+  const batch1Ids = batch1.map((q) => q.id);
+  const batch2 = generateQuizBatch(12, batch1Ids);
+  assert.equal(batch2.length, 12);
+  const overlap = batch2.filter((q) => batch1Ids.includes(q.id));
+  assert.equal(
+    overlap.length,
+    0,
+    'Consecutive quiz batches should present 12 completely new questions'
+  );
 });
 
 test('12. NASA DONKI FLR service handles offline failures, 429 rate-limits, empty arrays, caching, and valid live payloads', async () => {
@@ -645,6 +667,46 @@ test('14. NASA APOD service handles image, video thumbnail, caching, 429 rate-li
     assert.equal(imageApod.source, 'live');
     assert.equal(imageApod.record.mediaType, 'image');
     assert.equal(imageApod.record.hdUrl, 'https://apod.nasa.gov/apod/image/2603/jezero_hd.jpg');
+
+    // Step back 1 day when today's APOD returns HTTP 500
+    clearNasaCache();
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('date=')) {
+        return new Response(
+          JSON.stringify({
+            date: '2026-11-13',
+            title: 'Apollo 12 and Surveyor 3',
+            explanation: 'Astronaut Pete Conrad inspects Surveyor 3 on the Moon.',
+            media_type: 'image',
+            url: 'https://apod.nasa.gov/apod/image/2611/surveyor3.jpg',
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ code: 500, msg: 'Internal Service Error' }), {
+        status: 500,
+      });
+    }) as typeof fetch;
+    const steppedApod = await fetchNasaApod();
+    assert.equal(steppedApod.source, 'live');
+    assert.equal(steppedApod.record.date, '2026-11-13');
+
+    // Reject generic NASA Science logo placeholder responses -> archived saved data
+    clearNasaCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          date: '2024-05-14',
+          title: 'NASA Science',
+          explanation: 'Discover the cosmos!',
+          media_type: 'image',
+          url: 'https://science.nasa.gov/wp-content/themes/nasa-child/assets/images/nasa-logo@2x.png',
+        }),
+        { status: 200 }
+      )) as typeof fetch;
+    const placeholderRejected = await fetchNasaApod({ date: '2024-05-14' });
+    assert.equal(placeholderRejected.source, 'archived');
   } finally {
     clearNasaCache();
     globalThis.fetch = originalFetch;
@@ -1043,3 +1105,257 @@ test('21. Mars Surface Explorer deck preserves full untruncated descriptions and
     globalThis.fetch = originalFetch;
   }
 });
+
+test('22. Landing site trade-offs, live NASA space weather Sol 2 SPE, orbital telemetry, and demo reset work accurately', () => {
+  const base = createInitialGameState(555);
+  const delta = configureBriefingMission(base, {
+    landingSite: 'neretva-delta',
+    spaceWeatherMode: 'live-nasa',
+  });
+
+  assert.equal(delta.missionConfig.landingSite, 'neretva-delta');
+  assert.equal(delta.resources.lifeSupport, 82);
+  assert.equal(delta.resources.power, 72);
+  assert.equal(delta.greenhouse.waterAvailability, 84);
+  assert.equal(delta.powerOps.dustAccumulation, 16);
+
+  // Advance to Sol 2 in live-nasa mode and confirm SPE event triggers
+  let sim = startMission(delta);
+  sim = applyDecision(sim, sim.activeEvent!.options[0].id);
+  sim = proceedToSolSummary(sim);
+  sim = advanceToNextSol(sim);
+  assert.equal(sim.currentSol, 2);
+  assert.equal(sim.activeEvent?.id, 'solar-storm-warning');
+
+  const report = buildMissionReport(sim);
+  assert.equal(report.landingSiteName, 'Neretva Vallis Delta');
+  assert.equal(report.spaceWeatherMode, 'live-nasa');
+  assert.equal(report.missionSeed, 555);
+
+  const telemetry = getEarthMarsTelemetry(new Date('2026-11-14T00:00:00Z'));
+  assert.ok(telemetry.distanceMillionKm >= 50 && telemetry.distanceMillionKm <= 410);
+  assert.ok(telemetry.oneWayLightMinutes >= 2.8 && telemetry.oneWayLightMinutes <= 23);
+
+  const reset = resetExplorerProgress();
+  assert.equal(reset.unlockedBadges.length, 0);
+  assert.equal(reset.bestMissionScore, 0);
+});
+
+test('23. Mars survival consequences: radiation leak, crop spoilage/reseed, crew health loss, and legacy save backfill', () => {
+  // 1. Radiation leak & cumulative mSv dose + reinforce sealing
+  let radState = startMission(createInitialGameState(77));
+  radState = {
+    ...radState,
+    resources: {
+      ...radState.resources,
+      radiationProtection: 30,
+      solarWeatherAlert: 'Storm Watch',
+    },
+    radiationShelter: {
+      ...radState.radiationShelter,
+      crewSheltered: false,
+      radiationAlert: 'SPE Warning',
+    },
+  };
+  radState = applyDecision(radState, radState.activeEvent!.options[0].id);
+  radState = proceedToSolSummary(radState);
+  assert.equal(radState.radiationShelter.radiationLeakActive, true);
+  assert.ok(radState.radiationShelter.cumulativeDoseMSv > 0.67);
+
+  radState = advanceToNextSol(radState);
+  const radBeforeSeal = radState.resources.radiationProtection;
+  radState = applyShelterAction(radState, 'reinforce-shelter');
+  assert.equal(radState.radiationShelter.radiationLeakActive, false);
+  assert.ok(radState.resources.radiationProtection > radBeforeSeal);
+
+  // 2. Two consecutive low-power Sols (<25%) spoil Greenhouse crops; reseed-crops recovers
+  let cropState = startMission(createInitialGameState(88));
+  cropState = applyDecision(cropState, cropState.activeEvent!.options[0].id);
+  cropState = {
+    ...cropState,
+    resources: { ...cropState.resources, power: 18, batteryReserve: 18 },
+  };
+  cropState = proceedToSolSummary(cropState);
+  assert.equal(cropState.greenhouse.lowPowerStreak, 1);
+  assert.equal(cropState.greenhouse.cropsSpoiled, false);
+
+  cropState = advanceToNextSol(cropState);
+  cropState = applyDecision(cropState, cropState.activeEvent!.options[0].id);
+  cropState = {
+    ...cropState,
+    resources: { ...cropState.resources, power: 18, batteryReserve: 18 },
+  };
+  cropState = proceedToSolSummary(cropState);
+  assert.equal(cropState.greenhouse.lowPowerStreak, 2);
+  assert.equal(cropState.greenhouse.cropsSpoiled, true);
+  assert.equal(cropState.greenhouse.cropGrowthStage, 'Spoiled');
+  assert.equal(cropState.greenhouse.cropGrowthProgress, 0);
+  assert.equal(cropState.greenhouse.harvestReadiness, false);
+
+  cropState = advanceToNextSol(cropState);
+  cropState = {
+    ...cropState,
+    resources: { ...cropState.resources, power: 50 },
+  };
+  // allocate-power blocked while spoiled
+  const blockedBoost = applyGreenhouseAction(cropState, 'allocate-power');
+  assert.equal(blockedBoost.greenhouse.actionsUsedThisSol.length, 0);
+
+  cropState = applyGreenhouseAction(cropState, 'reseed-crops');
+  assert.equal(cropState.greenhouse.cropsSpoiled, false);
+  assert.equal(cropState.greenhouse.cropGrowthStage, 'Seedling');
+  assert.equal(cropState.greenhouse.cropGrowthProgress, 15);
+
+  // 3. Severe low health -> Incapacitated & Deceased (irreversible) -> Crew Health abort
+  let crewState = startMission(createInitialGameState(99));
+  crewState = {
+    ...crewState,
+    resources: {
+      ...crewState.resources,
+      lifeSupport: 15,
+      power: 15,
+      radiationProtection: 25,
+    },
+    crew: {
+      ...crewState.crew,
+      members: crewState.crew.members.map((m, idx) =>
+        idx < 2 ? { ...m, health: 12 } : { ...m, health: 80 }
+      ),
+    },
+  };
+  crewState = applyDecision(crewState, crewState.activeEvent!.options[0].id);
+  crewState = proceedToSolSummary(crewState);
+  const deceasedCount = crewState.crew.members.filter(
+    (m) => m.status === 'Deceased'
+  ).length;
+  assert.ok(deceasedCount >= 2);
+  assert.ok(crewState.failureReason?.includes('casualty') || crewState.failureReason?.includes('unable'));
+
+  const crewReport = buildMissionReport(crewState);
+  assert.equal(crewReport.outcome, 'failure');
+  assert.equal(crewReport.failedSystem, 'Crew Health');
+  assert.ok(crewReport.crewAlive <= 2);
+
+  // 4. Legacy save backfill fills new survival fields cleanly
+  const validSave = startMission(createInitialGameState(50));
+  const legacySave = JSON.parse(JSON.stringify(validSave)) as Record<string, unknown>;
+  const legacyMembers = (legacySave.crew as { members: Record<string, unknown>[] }).members;
+  legacyMembers.forEach((m) => delete m.health);
+  delete (legacySave.greenhouse as Record<string, unknown>).lowPowerStreak;
+  delete (legacySave.greenhouse as Record<string, unknown>).cropsSpoiled;
+  delete (legacySave.radiationShelter as Record<string, unknown>).radiationLeakActive;
+  delete (legacySave.radiationShelter as Record<string, unknown>).cumulativeDoseMSv;
+
+  const parsedLegacy = parseAndValidateGameState(JSON.stringify(legacySave));
+  assert.ok(parsedLegacy);
+  assert.equal(parsedLegacy.crew.members[0].health, 100);
+  assert.equal(parsedLegacy.greenhouse.lowPowerStreak, 0);
+  assert.equal(parsedLegacy.greenhouse.cropsSpoiled, false);
+  assert.equal(parsedLegacy.radiationShelter.radiationLeakActive, false);
+  assert.equal(parsedLegacy.radiationShelter.cumulativeDoseMSv, 0.67);
+});
+
+test('24. Real-time Perseverance Rover feed parses mars.nasa.gov raw images, caches, falls back to images-api, and handles offline mode', async () => {
+  const originalFetch = globalThis.fetch;
+  clearNasaCache();
+
+  try {
+    // 1. Live mars.nasa.gov raw images payload
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('mars.nasa.gov/rss/api')) {
+        return new Response(
+          JSON.stringify({
+            images: [
+              {
+                imageid: 'MARS2020-TEST-1',
+                sol: 2031,
+                date_taken_utc: '2026-11-06T12:16:25.848',
+                title: 'Mars Perseverance Sol 2031: SuperCam Camera',
+                caption: 'Captured on Mars by Perseverance SuperCam.',
+                credit: 'NASA/JPL-Caltech/LANL',
+                link: 'https://mars.nasa.gov/mars2020/multimedia/raw-images/TEST-1',
+                camera: { instrument: 'SUPERCAM_RMI' },
+                image_files: {
+                  medium: 'https://mars.nasa.gov/mars2020-raw-images/test_800.jpg',
+                  large: 'https://mars.nasa.gov/mars2020-raw-images/test_1200.jpg',
+                },
+              },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+
+    const liveFeed = await fetchRealtimeMarsRoverPhotos();
+    assert.equal(liveFeed.source, 'live');
+    assert.equal(liveFeed.photos.length, 1);
+    assert.equal(liveFeed.photos[0].sol, 2031);
+    assert.equal(liveFeed.photos[0].camera, 'SuperCam Micro-Imager');
+    assert.equal(
+      liveFeed.photos[0].imageUrl,
+      'https://mars.nasa.gov/mars2020-raw-images/test_800.jpg'
+    );
+
+    // 2. Cached result works without extra fetch
+    const cachedFeed = await fetchRealtimeMarsRoverPhotos();
+    assert.equal(cachedFeed.source, 'cached');
+
+    // 3. Falls back cleanly to live images-api.nasa.gov if mars.nasa.gov returns 503
+    clearNasaCache();
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('mars.nasa.gov')) {
+        return new Response('Service Unavailable', { status: 503 });
+      }
+      if (url.includes('images-api.nasa.gov')) {
+        return new Response(
+          JSON.stringify({
+            collection: {
+              items: [
+                {
+                  data: [
+                    {
+                      nasa_id: 'PIA26000',
+                      title: 'Perseverance Tracks in Jezero Crater',
+                      description: 'Rover wheel tracks on Martian dust.',
+                      date_created: '2026-11-01T00:00:00Z',
+                      center: 'JPL',
+                      keywords: ['Mars', 'Perseverance'],
+                    },
+                  ],
+                  links: [
+                    {
+                      href: 'https://images-assets.nasa.gov/image/PIA26000/PIA26000~thumb.jpg',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('Unexpected fetch');
+    }) as typeof fetch;
+
+    const backupLive = await fetchRealtimeMarsRoverPhotos({ forceRefresh: true });
+    assert.equal(backupLive.source, 'live');
+    assert.equal(backupLive.photos[0].id, 'PIA26000');
+
+    // 4. Falls back cleanly to archived AI reference when completely offline
+    clearNasaCache();
+    globalThis.fetch = (async () => {
+      throw new Error('Offline');
+    }) as typeof fetch;
+    const offlineFeed = await fetchRealtimeMarsRoverPhotos({ forceRefresh: true });
+    assert.equal(offlineFeed.source, 'archived');
+    assert.equal(offlineFeed.photos[0].imageUrl, null);
+  } finally {
+    clearNasaCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+

@@ -327,7 +327,7 @@ export const LEARN_MODULES: LearningModule[] = [
     iconName: 'sprout',
     summary: 'Growing fresh greens indoors while keeping stored meals.',
     explanation:
-      'Martian dirt holds toxic perchlorate salts, so crews grow lettuce and herbs indoors using nutrient water (hydroponics). Grow lights use electricity, so packaged meals stay essential.',
+      'Martian dirt contains toxic salty chemicals (perchlorates), so crews grow lettuce and herbs indoors using nutrient water (hydroponics). Grow lights use electricity, so packaged meals stay essential.',
     keyFacts: [
       'Hydroponics grows plant roots in clean water instead of Martian dirt.',
       'LED grow lights share electricity with cabin heaters.',
@@ -365,7 +365,7 @@ export const LEARN_MODULES: LearningModule[] = [
         'Plants need zero light',
       ],
       correctIndex: 0,
-      feedbackCorrect: 'Awesome! Hydroponics avoids salty Martian perchlorates.',
+      feedbackCorrect: 'Awesome! Hydroponics avoids the salty chemicals in Martian dirt.',
       feedbackIncorrect:
         'Plants still need indoor warmth and light, and hydroponics skips Martian dirt.',
     },
@@ -642,14 +642,14 @@ export const KNOWLEDGE_QUIZ_QUESTIONS: QuizQuestion[] = [
     moduleTitle: 'Greenhouses & Space Food',
     question: 'Why shouldn’t crews plant Earth seeds straight into Martian dirt?',
     options: [
-      'Martian soil has toxic perchlorate salts and lacks Earth microbes',
+      'Martian dirt has toxic salty chemicals and lacks Earth microbes',
       'Seeds float off Mars',
       'Martian dirt turns plants to metal',
       'Plants do not need water',
     ],
     correctIndex: 0,
     explanation:
-      'Untreated Martian regolith contains salty perchlorates, so hydroponic water farms work best.',
+      'Untreated Martian dirt contains salty chemicals (perchlorates), so water-tray farms work best.',
   },
   {
     id: 'q6',
@@ -750,3 +750,403 @@ export const KNOWLEDGE_QUIZ_QUESTIONS: QuizQuestion[] = [
       'Because Mars gets less sunlight and dusty skies, compact fission is studied for reliable backup power.',
   },
 ];
+
+export const EXTRA_QUIZ_QUESTIONS: QuizQuestion[] = [
+  {
+    id: 'q13',
+    moduleTitle: 'Introduction to Mars',
+    question: 'About how much weaker is gravity on Mars compared to Earth?',
+    options: [
+      'Roughly 38% of Earth’s gravity (nearly one-third)',
+      '10 times stronger than Earth',
+      'Exactly the same as Earth',
+      'Zero gravity like floating in space',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Mars has about 38% of Earth’s gravity, so a 100 lb astronaut feels like ~38 lbs!',
+  },
+  {
+    id: 'q14',
+    moduleTitle: 'Introduction to Mars',
+    question: 'Why is the surface of Mars rusty red?',
+    options: [
+      'Iron-rich dust on the rocks has rusted over billions of years',
+      'The planet is covered in hot lava oceans',
+      'Red trees cover every crater',
+      'Mars glows red because it is close to the Sun',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Fine iron-oxide (rust) dust coats Martian rocks and blows through the sky.',
+  },
+  {
+    id: 'q15',
+    moduleTitle: 'What Is a Sol?',
+    question: 'Why do Mars mission teams use “Sols” instead of 24-hour Earth days?',
+    options: [
+      'To keep rover sunlight schedules and astronaut sleep synced with Mars daylight',
+      'Because Mars has no night time',
+      'Because digital clocks break on Mars',
+      'To make missions finish twice as fast',
+    ],
+    correctIndex: 0,
+    explanation:
+      'A Mars day is 39 minutes longer than Earth’s, so crews follow Sols to match sunrise and sunset.',
+  },
+  {
+    id: 'q16',
+    moduleTitle: 'What Is a Sol?',
+    question: 'Over 10 Sols, how much ahead does Mars time drift compared to Earth clocks?',
+    options: [
+      'Over 6.5 hours later than Earth time',
+      'It moves backward by 10 hours',
+      'Zero minutes difference',
+      '5 whole days ahead',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Adding 39 minutes each Sol shifts Mars local time by 390 minutes (6.5 hours) after 10 Sols!',
+  },
+  {
+    id: 'q17',
+    moduleTitle: 'Life Support in Space',
+    question: 'What gas must cabin scrubbers remove so astronauts do not get sick indoors?',
+    options: [
+      'Carbon dioxide breathed out by the crew',
+      'Clean oxygen made by water splitters',
+      'Water vapor in showers',
+      'Helium from solar panels',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Scrubbers filter out carbon dioxide we exhale so cabin air stays fresh and safe to breathe.',
+  },
+  {
+    id: 'q18',
+    moduleTitle: 'Life Support in Space',
+    question: 'Which daily habit helps protect astronauts’ bones and muscles in lower Mars gravity?',
+    options: [
+      'Scheduled exercise, steady sleep, and balanced nutrition',
+      'Floating indoors without moving all Sol',
+      'Skipping meals to save pantry space',
+      'Staying awake for 48 hours straight',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Space biology studies show exercise, healthy meals, and regular sleep keep crews strong.',
+  },
+  {
+    id: 'q19',
+    moduleTitle: 'Oxygen Recycling',
+    question: 'How does NASA’s MOXIE experiment on Perseverance make oxygen on Mars?',
+    options: [
+      'It pulls in carbon dioxide air and uses heat + electricity to split out pure oxygen',
+      'It pumps ocean water from Jezero Crater',
+      'It melts Martian dust into oxygen blocks',
+      'It catches oxygen floating from Earth',
+    ],
+    correctIndex: 0,
+    explanation:
+      'MOXIE successfully turned Mars’s carbon dioxide atmosphere into breathable-grade oxygen!',
+  },
+  {
+    id: 'q20',
+    moduleTitle: 'Oxygen Recycling',
+    question: 'Which hidden cost happens when astronauts step outside through the airlock?',
+    options: [
+      'Suit oxygen is spent and a tiny puff of cabin air escapes',
+      'The habitat gains extra oxygen',
+      'Solar panels automatically clean themselves',
+      'Greenhouse tomatoes ripen in 5 seconds',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Every spacewalk uses spacesuit oxygen and airlock gas, which is why remote repairs help.',
+  },
+  {
+    id: 'q21',
+    moduleTitle: 'Solar Power & Dust Storms',
+    question: 'What happens to solar panels when fine Martian dust settles on them?',
+    options: [
+      'Dust blocks sunlight, dropping daily battery charging unless cleaned',
+      'Dust makes solar wings spin faster like windmills',
+      'Dust turns sunlight into extra water',
+      'Dust permanently heats the greenhouse for free',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Even a thin layer of red dust reflects sunlight away, starving batteries until brushed or pulsed off.',
+  },
+  {
+    id: 'q22',
+    moduleTitle: 'Solar Power & Dust Storms',
+    question: 'What is the smartest step when a thick regional dust storm dims sunlight?',
+    options: [
+      'Turn on power-saving mode until skies clear, then brush off settled dust',
+      'Leave all bright floodlights and heaters on max',
+      'Send astronauts outside during blinding dust winds',
+      'Open the habitat windows to let dust blow through',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Saving battery charge during the storm and cleaning panels afterward keeps the base alive.',
+  },
+  {
+    id: 'q23',
+    moduleTitle: 'Greenhouses & Space Food',
+    question: 'What happens to indoor Mars crops if habitat power stays very low for multiple Sols?',
+    options: [
+      'Grow lights dim and freezing cold can frost or spoil the plants',
+      'Plants grow twice as tall in the dark',
+      'Crops start making electricity for batteries',
+      'Martian wind waters the trays automatically',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Hydroponic trays rely on heated water and LED grow lights, so extended blackouts risk losing crops.',
+  },
+  {
+    id: 'q24',
+    moduleTitle: 'Greenhouses & Space Food',
+    question: 'Besides fresh vitamins, what helpful bonus do living greenhouse plants give the crew?',
+    options: [
+      'They absorb carbon dioxide and release fresh oxygen',
+      'They shield the entire base from solar flares',
+      'They patch torn spacesuit gloves',
+      'They boost radio signal speed to Earth',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Healthy plants breathe in carbon dioxide and give back oxygen while boosting crew morale.',
+  },
+  {
+    id: 'q25',
+    moduleTitle: 'Radio Delays & Solar Conjunction',
+    question: 'Why can’t Earth Mission Control fly a Mars rover like a live video-game joystick?',
+    options: [
+      'Signals take 6–44 minutes round-trip, so hazards would happen before Earth sees them',
+      'Earth controllers do not know how to drive',
+      'Radio waves only travel at night',
+      'Rovers run on steam engines',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Because light-speed delay is minutes long, rovers and crews must act safely on their own.',
+  },
+  {
+    id: 'q26',
+    moduleTitle: 'Radio Delays & Solar Conjunction',
+    question: 'What causes a Solar Conjunction radio blackout every ~26 months?',
+    options: [
+      'The Sun sits directly between Earth and Mars, scrambling radio signals',
+      'Mars flies behind the Moon',
+      'Antennas freeze solid every Tuesday',
+      'Astronauts unplug the dish to clean it',
+    ],
+    correctIndex: 0,
+    explanation:
+      'During solar conjunction, hot solar plasma blocks clear radio contact for about two weeks.',
+  },
+  {
+    id: 'q27',
+    moduleTitle: 'Habitats & Airlocks',
+    question: 'Why is a small air pressure leak inside a Mars habitat treated as an emergency?',
+    options: [
+      'Thin Martian outside air cannot keep humans alive, so losing pressure drains oxygen fast',
+      'Outside butterflies might fly indoors',
+      'Leaks make gravity stronger indoors',
+      'Leaks turn battery charge into water',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Sealing air leaks quickly saves breathable pressure, cabin heat, and crew lives.',
+  },
+  {
+    id: 'q28',
+    moduleTitle: 'Habitats & Airlocks',
+    question: 'Why did NASA pick Jezero Crater floor as a realistic place to land and build?',
+    options: [
+      'Flat terrain with ancient lake minerals and nearby rock outcrops to study',
+      'It is filled with liquid oceans and beaches',
+      'It sits right next to Earth',
+      'Zero dust ever lands inside craters',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Jezero Crater is an ancient lakebed with safe flat landing zones and exciting rock history.',
+  },
+  {
+    id: 'q29',
+    moduleTitle: 'Balancing Crew Trade-Offs',
+    question: 'If a solar storm hits while power is low, why should you prioritize sheltering first?',
+    options: [
+      'Crew health cannot be replaced, and a brief power-saving mode protects them safely inside',
+      'Astronauts get stronger from solar storm radiation',
+      'Solar flares recharge spacesuits',
+      'Storm shelters generate greenhouse seeds',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Protecting astronauts from dangerous storm bursts comes first; power can be recovered afterward.',
+  },
+  {
+    id: 'q30',
+    moduleTitle: 'Balancing Crew Trade-Offs',
+    question: 'What happens if the habitat water jacket loses too much shielding protection?',
+    options: [
+      'Space radiation can leak indoors and slowly hurt crew health',
+      'The habitat floats into orbit',
+      'Solar panels double their output',
+      'Greenhouse plants freeze into diamonds',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Damaged shielding lets extra cosmic radiation inside, lowering crew health unless repaired.',
+  },
+  {
+    id: 'q31',
+    moduleTitle: 'Crew Autonomy & Checklists',
+    question: 'If a critical pipe breaks while Earth radio is delayed, what should the crew do first?',
+    options: [
+      'Follow their trained emergency checklist right away instead of waiting 20+ minutes',
+      'Wait for Earth to send a reply before touching anything',
+      'Turn off Life Support to stay quiet',
+      'Launch the return rocket empty',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Emergency checklists let Mars crews stop leaks or shelter immediately without deadly delays.',
+  },
+  {
+    id: 'q32',
+    moduleTitle: 'Crew Autonomy & Checklists',
+    question: 'When IS waiting or sending a detailed report to Earth a smart move?',
+    options: [
+      'For non-urgent system plans or when crews want engineering confirmation without panic',
+      'During an active hull pressure leak',
+      'While a solar storm is actively hitting unshielded astronauts',
+      'When cabin oxygen drops below 15%',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Clear reports to Earth help plan smart long-term fixes once immediate dangers are safe.',
+  },
+  {
+    id: 'q33',
+    moduleTitle: 'Future Mars Power Systems',
+    question: 'What kind of nuclear battery keeps rovers like Perseverance warm through -53°C nights?',
+    options: [
+      'An MMRTG (a long-lasting heat battery powered by natural decay)',
+      'A giant wind turbine tower',
+      'Regular AA alkaline batteries',
+      'Campfires burned inside the rover',
+    ],
+    correctIndex: 0,
+    explanation:
+      'An MMRTG turns steady heat into electricity day and night, even in dark dust storms.',
+  },
+  {
+    id: 'q34',
+    moduleTitle: 'Future Mars Power Systems',
+    question: 'Why does Mars atmosphere make large Earth-style wind turbines struggle?',
+    options: [
+      'Mars air is under 1% as thick as Earth’s, so wind carries very little push',
+      'Mars wind always blows straight down',
+      'Wind on Mars only happens once per century',
+      'Mars air is too thick and heavy for blades',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Even fast Martian gusts feel gentle because the ultra-thin air has almost no density.',
+  },
+  {
+    id: 'q35',
+    moduleTitle: 'Radiation & Storm Shelters',
+    question: 'Why can’t astronauts rely on Mars’s sky or magnetic field to block space radiation?',
+    options: [
+      'Mars lacks a strong global magnetic field and has a super-thin atmosphere',
+      'Mars has a thicker atmosphere than Earth',
+      'Mars is surrounded by a ring of lead',
+      'Sunlight bounces all radiation back into deep space',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Unlike Earth’s protective blanket of air and magnetic shield, Mars leaves the surface exposed.',
+  },
+  {
+    id: 'q36',
+    moduleTitle: 'Life Support in Space',
+    question: 'Why is clean water used inside both the greenhouse and habitat radiation walls?',
+    options: [
+      'Hydrogen in water drinks up space radiation AND keeps crew and plants alive',
+      'Water makes antennas reach farther',
+      'Water weighs less than air',
+      'Water turns red Mars dust into gold',
+    ],
+    correctIndex: 0,
+    explanation:
+      'Water is a multi-use hero on Mars: astronauts drink it, plants grow in it, and water walls block radiation!',
+  },
+];
+
+export const ALL_QUIZ_QUESTIONS: QuizQuestion[] = [
+  ...KNOWLEDGE_QUIZ_QUESTIONS,
+  ...EXTRA_QUIZ_QUESTIONS,
+];
+
+function shuffleArray<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+export function shuffleQuestionOptions(q: QuizQuestion): QuizQuestion {
+  const indexed = q.options.map((text, idx) => ({
+    text,
+    isCorrect: idx === q.correctIndex,
+  }));
+  const shuffled = shuffleArray(indexed);
+  return {
+    ...q,
+    options: shuffled.map((o) => o.text),
+    correctIndex: Math.max(
+      0,
+      shuffled.findIndex((o) => o.isCorrect)
+    ),
+  };
+}
+
+/**
+ * Creates a fresh randomized batch of quiz questions, prioritizing questions
+ * not in `recentlyUsedIds` so consecutive attempts present new questions.
+ */
+export function generateQuizBatch(
+  batchSize = 12,
+  recentlyUsedIds: string[] = []
+): QuizQuestion[] {
+  const recentSet = new Set(recentlyUsedIds);
+  const freshPool = shuffleArray(
+    ALL_QUIZ_QUESTIONS.filter((q) => !recentSet.has(q.id))
+  );
+  const fallbackPool = shuffleArray(
+    ALL_QUIZ_QUESTIONS.filter((q) => recentSet.has(q.id))
+  );
+
+  const selected = [...freshPool, ...fallbackPool].slice(
+    0,
+    Math.min(batchSize, ALL_QUIZ_QUESTIONS.length)
+  );
+  return shuffleArray(selected).map(shuffleQuestionOptions);
+}
+
+/**
+ * Returns additional practice questions for a given Learning Module title,
+ * drawn from ALL_QUIZ_QUESTIONS so players can try fresh questions per topic.
+ */
+export function getModuleQuizVariants(moduleTitle: string): QuizQuestion[] {
+  return ALL_QUIZ_QUESTIONS.filter((q) => q.moduleTitle === moduleTitle);
+}

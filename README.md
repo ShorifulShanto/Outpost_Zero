@@ -1,281 +1,125 @@
-# OUTPOST ZERO
+# Outpost Zero
 
-**Explore. Build. Survive. Discover.**
+**Explore. Build. Survive. Discover.** · *Blast Off to Something New*
 
-Outpost Zero is a responsive, browser-based educational Mars survival simulator and space science platform designed primarily for learners aged **7–12**, while remaining engaging for teenagers, teachers, parents, and space enthusiasts.
-
----
-
-## 1. Project Introduction
-
-Living on Mars requires solving interconnected engineering challenges. Unlike Earth, Mars has a thin carbon dioxide atmosphere, freezing temperatures, dust storms, heightened space radiation, and a multi-minute radio communication delay with Earth.
-
-**Outpost Zero** puts learners in command of a 4-astronaut research outpost across **10 Martian Sols** (Martian days), combining a deterministic systems simulation with a 10-module learning hub, an interactive Knowledge Check Quiz, and a NASA space-weather data observatory.
+Outpost Zero is an interactive **10-Sol Mars habitat engineering simulator** and space-science learning web application designed for young explorers (**ages 7–12**), parents, classrooms, and space enthusiasts. Command a 4-astronaut crew at Jezero Crater, navigate genuine engineering trade-offs where no choice is free, inspect live and archived NASA/CSA space science, and earn your downloadable Flight Certificate.
 
 ---
 
-## 2. Project Objectives
+## Features
 
-- Teach young learners how **life support**, **power**, **radiation shielding**, **greenhouse food production**, and **communication delays** depend on one another.
-- Encourage systems thinking through a **"no free choices"** rule where every engineering action produces both benefits and trade-offs.
-- Explain real-world spaceflight science in accessible, encouraging, age-appropriate language.
-- Connect gameplay with authentic public space research from NASA and the Canadian Space Agency (CSA) while remaining fully playable offline.
+- **10-Sol Mars Mission Simulator**
+  - Manage **Life Support**, **Power**, and **Radiation Protection** (`0–100%`) across 10 Martian Sols using a strict **"no free choices"** trade-off engine across 16 mission events.
+  - **4-Astronaut Crew**: Lead Commander **Maya Chen**, Botanist **Mateo Silva**, Systems Engineer **Priya Nair**, and Medical Officer **Leo Vance**.
+  - **3 Jezero Crater Landing Zones**: Choose between *Jezero Crater Floor* (balanced), *Neretva Vallis Delta* (+Life Support & water ice, dustier solar panels), and *Jezero Rim Ridge* (+Sunlight & elevation, steeper rover wear).
+  - **Space Weather Modes**: Play a balanced 10-Sol baseline mission or switch to **NASA DONKI Mode** to face real-world solar-storm dynamics (including a Sol 2 Solar Particle Event).
+  - **Live Mars Scene Visualizer**: Animated habitat window (`MarsSpaceCanvas`) showing sunlight levels, red dust coating solar panels, dust storms, frost, and radiation hazards so young players visually understand every constraint.
+  - **Interactive Habitat Subsystems**:
+    - *Mars Greenhouse*: Maintain equipment, boost grow lights, clear clogged irrigation valves, and harvest crops.
+    - *Solar Power & Dust Operations*: Brush dust off panels (locked during active dust storms) and toggle low-power survival mode.
+    - *Radiation Shelter*: Move astronauts inside water-and-polyethylene storm shelters and reinforce shielding during solar flares.
+    - *Earth–Mars Communication Delay*: Live orbital distance and one-way light-time readout (`3–22 min` real delay simulated as a kid-friendly 6-second countdown with optional radio chime).
+  - **Two-Tier Reset**: Use **Restart** for a quick replay with a fresh Mission Code (`OZ-####`), or **Full Reset (Demo)** for classroom and exhibition kiosks.
 
----
+- **100-Point Mission Report & Downloadable Certificate**
+  - View a clear score breakdown (`Life Support 30 + Power 25 + Radiation 25 + Decisions 20`), Mission Control Advisor feedback, an interactive 10-Sol resource chart, and a full Sol-by-Sol decision log.
+  - Enter your **Commander Name** and click **Download Certificate** to save a high-resolution PNG Flight Certificate with your rank and score.
 
-## 3. Main Features
+- **Space Learning Hub & Dynamic 36-Question Quiz**
+  - **12 Bite-Sized STEM Lessons** covering Martian Sols, oxygen recycling, hydroponic food, solar power, dust storms, radiation shielding, communication delays, and astronaut health—each with rotating **Quick Check** practice questions.
+  - **Never-Repeating Knowledge Check Quiz**: Powered by a **36-question bank** dealt in **non-overlapping 12-question batches** (`Batch #1`, `Batch #2`, `Batch #3`) with shuffled answer choices and a `New Question Batch` button for endless replayability.
 
-- **Space Explorer Home Page**: Mission introduction, interactive Outpost Zero habitat schematic, Mars environmental challenge facts, and featured topic cards for Life Support, Power, and Radiation.
-- **10-Sol Mars Mission Simulator**:
-  - Tracks **Life Support**, **Power**, and **Radiation Protection** (`0–100%`) with progress bars, numeric indicators, status labels (`Nominal`, `Caution`, `Critical`), icons, and plain-language tooltips.
-  - Features **15 distinct Mars events** across seeded Sol windows (`COM-01` Solar Conjunction, `COM-02` Comm Equipment Failure, `PWR-01` Solar Panel Dust, `PWR-02` Battery Inverter Fault, `ENV-01` Regional Dust Storm, `LSS-01/02/03`, `BIO-01` Greenhouse Thermal Alert, `RAD-01` Solar Particle Event Warning, `HAB-00/01/02`, `ROV-01` Rover Failure, `SUP-01` Spare Parts Shortage, and `CREW-01` Crew Fatigue & Minor Strain).
-  - Includes a **Communication Delay & Crew Autonomy System** explaining the 3–22 minute one-way (6–44 minute round-trip) speed-of-light delay and Solar Conjunction disruptions, a non-blocking 6-second simulated countdown (*"Simulated communication delay — shortened for gameplay"*), and an interactive 5-part **Detailed Report to Earth** sender.
-  - Integrates a **Mars Environment Panel** (`~95% CO2`, `<1% Earth pressure`, `~-53°C` average, dust storms, terrain), **Solar Power & Dust Operations** (~45% max solar flux, ~0.2%/Sol dust benchmark, Emergency Power-Saving Mode, storm-locked panel cleaning, educational alternative power concepts), and **Radiation Protection & Storm Shelter** (GCR vs. SPE, water/polyethylene/regolith shielding, crew shelter controls, and Mars Ice Home research-design disclosure).
-  - Supports Pause/Resume, double-execution prevention, `localStorage` persistence with legacy backfill and corrupted-save recovery, End-of-Sol summaries, and an End-of-Mission Report with a **100-Point Mission Performance Score (`30 / 25 / 25 / 20`)**, evidence-based **Mission Control Advisor** recommendations, and a Recharts resource history line chart.
-- **Mars Greenhouse Subsystem**:
-  - Displays food reserves, crop growth stage/progress, greenhouse health, water availability, greenhouse power draw, irrigation status, and harvest readiness.
-  - Provides four interactive trade-off actions (maintain equipment, allocate power to plant growth, repair irrigation, and harvest crops when 100% ready) plus a child-friendly Mars plant science guide.
-- **Space Learning Hub (`/learn`)**:
-  - **12 interactive educational modules** for ages 7–12 with key facts, NASA examples, **verified NASA OSDR, RadLab, Mars Trek, and CSA research benchmarks**, click-to-reveal vocabulary tooltips, inline module checks, and an offline **12-question Knowledge Check Quiz** with score tracking and replay.
-- **NASA & Space Research Observatory (`/observatory`)**:
-  - Integrates NASA's official **DONKI Solar Flares (`FLR`) & Coronal Mass Ejections (`CME`)**, **Astronomy Picture of the Day (`APOD`)**, **NASA Image and Video Library (`images-api.nasa.gov/search`)**, and **NASA OSDR (`osdr.nasa.gov/osdr/data/search`)** covering bone, muscle, immune, and sleep/circadian spaceflight studies.
-  - Features response validation, local TTL caching (`15 min` DONKI / `30 min` APOD & Images / `60 min` OSDR), rate-limit handling (`HTTP 429`), reliable offline fallback datasets, and a 4-category transparency legend (**Live NASA Data**, **Cached NASA Data**, **Archived NASA Data**, **Educational & Simulated**).
-  - Includes a **NASA RadLab & MSL RAD Dosimetry** comparison (preserving `mGy/day` vs. `mSv/day` and ISS LEO vs. Mars surface context), **NASA Mars Trek Jezero Crater Terrain** profile, **Canadian Space Agency (CSA)** food/nutrition/STEM resources, and a unified **Data Sources & Space Agency Resources Directory** with all 7 official agency portals.
-  - Supplies DONKI, OSDR, RadLab, Mars Trek, and CSA scientific context to Mission Control Advisor recommendations without altering deterministic gameplay math.
-- **About Page (`/about`)**:
-  - Explains educational goals, simulator trade-offs, scientific simplifications, research attributions, and independent non-endorsed status.
+- **9 Explorer Medals**
+  - Unlock **Bronze**, **Silver**, and **Gold** medals across gameplay, 3D habitat dome exploration, quiz mastery, and NASA Observatory discovery, complete with celebratory notifications and a Medals & Guide modal.
 
----
-
-## 4. Technology Stack
-
-Based on `package.json`:
-
-- **Framework**: React `^19.0.1`, React DOM `^19.0.1`
-- **Language**: TypeScript `^7.0.2`
-- **Build Tool**: Vite `^8.3.0` (`@vitejs/plugin-react ^6.1.1`)
-- **Styling**: Tailwind CSS `^4.3.3` (`@tailwindcss/vite ^4.3.3`)
-- **Charts**: Recharts
-- **Icons**: Lucide React `^0.546.0`
-- **Testing Runner**: Node.js built-in test runner (`node:test`) executed via `tsx ^4.21.0`
+- **NASA & Space Observatory (Live + Offline Resilient)**
+  - **Live Mars Perseverance Rover Raw Photos** (`mars.nasa.gov`) with lightweight thumbnail loading and a full-resolution photo viewer modal.
+  - **NASA Astronomy Picture of the Day (`APOD`)** with an interactive **date picker**, automatic 1-day UTC fallback if today's APOD is unavailable, and clean filtering of placeholder payloads.
+  - **NASA Image & Video Library** searchable gallery (*All Rovers*, *Perseverance*, *Curiosity*, *Mars Surface*).
+  - **Space Weather (`DONKI FLR & CME`)**, **Astronaut Health (`OSDR`)**, **Radiation Benchmarks (`RadLab & Curiosity RAD`)**, **Jezero Terrain (`Mars Trek`)**, and **Canadian Space Agency (`CSA`)** food/STEM resources.
+  - Clearly tags every record as **`LIVE NASA`** or **`FROM SAVED DATA`**, caches media cleanly across refreshes without flickering, and works **100% offline** with built-in educational archives.
 
 ---
 
-## 5. Project Structure
+## Resources & Data Sources Used
+
+Outpost Zero connects to official public space agency endpoints and educational references:
+
+| Resource | What It Provides in Outpost Zero | Link |
+| :--- | :--- | :--- |
+| **NASA Mars 2020 Raw Images** | Live Perseverance rover photos directly from Jezero Crater | [mars.nasa.gov/mars2020](https://mars.nasa.gov/mars2020/multimedia/raw-images/) |
+| **NASA Open APIs (`APOD`)** | Daily space photography with interactive date lookup | [api.nasa.gov](https://api.nasa.gov/) |
+| **NASA DONKI (`FLR` & `CME`)** | Solar flare & coronal mass ejection space-weather records | [kauai.ccmc.gsfc.nasa.gov/DONKI](https://kauai.ccmc.gsfc.nasa.gov/DONKI/) |
+| **NASA Image & Video Library** | Curated Perseverance, Curiosity & Mars surface imagery | [images.nasa.gov](https://images.nasa.gov/) |
+| **NASA OSDR** | Spaceflight bone (`OSD-352`), muscle (`OSD-47`), immune (`OSD-738`) & sleep (`OSD-253`) studies | [osdr.nasa.gov](https://osdr.nasa.gov/) |
+| **NASA RadLab & Curiosity RAD** | Real ISS (`mGy/day`) vs. Mars surface (`mSv/day`) radiation benchmarks | [visualization.osdr.nasa.gov/radlab](https://visualization.osdr.nasa.gov/radlab/) |
+| **NASA Mars Trek** | Jezero Crater elevation (`-2,700 m`) & terrain hazard context | [trek.nasa.gov/mars](https://trek.nasa.gov/mars/) |
+| **Canadian Space Agency (CSA)** | Controlled-environment food, astronaut nutrition (`1,900–3,200 kcal/day`) & youth STEM | [asc-csa.gc.ca](https://www.asc-csa.gc.ca/eng/youth-educators/) |
+
+*Attribution & Honesty Notice: Outpost Zero is an independent educational project and is not officially endorsed by or affiliated with NASA or CSA. Per NASA Media Usage Guidelines (14 CFR Part 1221), official agency insignias are not displayed, and saved/archived datasets are explicitly labeled **`FROM SAVED DATA`**.*
+
+---
+
+## Tech Stack & Project Structure
+
+- **Frontend**: React 19, TypeScript, Vite 8, Tailwind CSS v4, Lucide Icons, Motion, Recharts (lazy-loaded for Mission Reports)
+- **Testing**: Node built-in test runner via `tsx` (`24` automated unit & integration tests)
 
 ```text
-/
-├── .env.example
-├── index.html
-├── metadata.json
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-├── README.md
-├── tests/
-│   └── outpostZero.test.ts             # 19 deterministic engine, subsystem, advisor, storage & NASA/CSA tests
-└── src/
-    ├── App.tsx                         # Root router, simulator state & localStorage sync
-    ├── index.css                       # Tailwind CSS v4, typography, starfield & focus styles
-    ├── main.tsx                        # React entry point
-    ├── types/
-    │   └── mission.ts                  # Core TypeScript interfaces (GameState, Advisor, Subsystems)
-    ├── engine/
-    │   ├── gameEngine.ts               # Pure deterministic mission, power, shelter & greenhouse engine
-    │   ├── missionAdvisor.ts           # 100-point rubric & evidence-based advisor evaluation
-    │   └── missionData.ts              # 10-Sol config, environment facts, power concepts & 15 events
-    ├── data/
-    │   ├── learnModules.ts             # 12 learning modules, vocabulary & offline quiz questions
-    │   └── spaceResearchData.ts        # Verified RadLab dosimetry, Mars Trek terrain, CSA & 7-source directory
-    ├── services/
-    │   ├── nasaCache.ts                # Safe TTL cache (localStorage + memory fallback) & URL sanitizer
-    │   ├── nasaDonkiService.ts         # NASA DONKI FLR & CME client, validator, cache & radiation context
-    │   ├── nasaMediaService.ts         # NASA APOD & Image Library (images-api.nasa.gov) client & fallback
-    │   └── nasaOsdrService.ts          # NASA OSDR space-biology query client (bone, muscle, immune, sleep)
-    ├── utils/
-    │   └── storage.ts                  # LocalStorage persistence, backfill & schema validation
-    └── components/
-        ├── Navbar.tsx                  # Responsive 72px 3-zone navigation header
-        ├── HomePage.tsx                # Space Explorer landing page
-        ├── OutpostSchematic.tsx        # Interactive vector habitat engineering diagram
-        ├── MissionSimulator.tsx        # 10-Sol simulator console, subsystems deck & turn flow
-        ├── ResourceCard.tsx            # Primary resource meter, sub-metrics & tooltip
-        ├── GreenhousePanel.tsx         # Mars Greenhouse subsystem UI & plant science guide
-        ├── MarsEnvironmentPanel.tsx    # Live weather/temp & expandable Mars environment facts
-        ├── PowerOperationsPanel.tsx    # Dust, storm lock, power-saving & alternative power concepts
-        ├── RadiationShelterPanel.tsx   # Crew shelter controls, GCR vs SPE & Mars Ice Home context
-        ├── CommunicationDelayPanel.tsx # Earth 6s delay simulator, conjunction notice & Earth report
-        ├── MissionReportView.tsx       # 100-pt rubric, Advisor feedback, Recharts graph & log
-        ├── LearnPage.tsx               # 12 modules + offline Knowledge Check Quiz
-        ├── ObservatoryPage.tsx         # Live/archived DONKI solar flares & NASA archive portals
-        └── AboutPage.tsx               # Educational overview, simplifications & attributions
+├── public/                     # Static assets, cropped Outpost Zero PNG logo, favicon
+├── src/
+│   ├── assets/images/          # Bundled offline Martian fallback photography
+│   ├── components/             # Home, Simulator, Subsystem Panels, Observatory, Learn, Medals & Modals
+│   ├── data/                   # 12 STEM lessons & 36-question rotating quiz bank
+│   ├── engine/                 # Deterministic 10-Sol simulation engine, 16 mission events & scoring
+│   ├── services/               # NASA Rover, APOD, Image Library, DONKI, OSDR/RadLab & local caching
+│   ├── types/                  # Shared TypeScript interfaces for missions, events & reports
+│   └── utils/                  # Explorer medal progress, certificate PNG exporter & storage helpers
+├── tests/                      # 24 automated tests covering engine rules, quiz batches & NASA fallbacks
+├── .env.example                # Empty template for optional VITE_NASA_API_KEY
+├── README.md                   # Traditional project documentation (this file)
+└── PROMPT_README.md            # Plain-English modular Master Prompt for recreating Outpost Zero
 ```
 
 ---
 
-## 6. Local Setup Instructions
+## Quick Player Guide
+
+1. **Explore Home**: Click the 3D habitat domes (*Life Support*, *Shielded Core*, *Power Grid*), switch between the 4 Mars Hazards, and inspect the live *Mars Surface View*.
+2. **Choose Your Landing Zone**: Open **Simulator**, pick a Jezero Crater landing site and Space Weather mode, and click **Launch Mission**.
+3. **Survive 10 Sols**: Solve each Sol's emergency trade-off, keep **Greenhouse**, **Solar Panels**, and **Radiation Shelter** healthy, watch how Martian weather changes outside, and send your Earth radio report when ready.
+4. **Earn Your Certificate**: Complete Sol 10, type your **Commander Name**, and download your PNG Flight Certificate.
+5. **Learn & Collect Medals**: Visit **Learn** (take fresh 12-question quiz batches) and **Observatory** (inspect live Perseverance photos, APOD dates, and solar storms) to unlock all **9 Explorer Medals**.
+
+---
+
+## Local Setup & Verification
 
 ### Prerequisites
+- Node.js 20+ and npm
 
-- **Node.js** 20+ (tested on Node `v22.23.2`)
-- **npm** (included with Node.js)
-
-### 7. Installation Commands
-
+### Run Locally
 ```bash
 npm install
-```
-
-### 8. Development Server Command
-
-```bash
 npm run dev
 ```
+Open `http://localhost:3000`.
 
-This runs `vite --port=3000 --host=0.0.0.0`, serving the application locally at `http://localhost:3000`.
-
-### 9. Production Build Command
-
-```bash
-npm run build
-```
-
-To preview the built production bundle locally:
-
-```bash
-npm run preview
-```
-
----
-
-## 10. NASA API Configuration
-
-The NASA Data Observatory and Radiation Advisor context connect to four official public NASA endpoints:
-
-- **NASA DONKI Solar Flares**: `https://api.nasa.gov/DONKI/FLR` (`startDate`, `endDate`, `api_key`)
-- **NASA DONKI Coronal Mass Ejections**: `https://api.nasa.gov/DONKI/CME` (`startDate`, `endDate`, `api_key`)
-- **NASA Astronomy Picture of the Day**: `https://api.nasa.gov/planetary/apod` (`api_key`, `thumbs=true`)
-- **NASA Image and Video Library**: `https://images-api.nasa.gov/search` (`q`, `media_type=image`, `page_size=8` — no API key required)
-
-For keyed endpoints, `api_key` resolves from `import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY'`. NASA observations supply scientific context only and never alter deterministic simulator calculations.
-
-### 11. `VITE_NASA_API_KEY` Configuration
-
-By default, the app uses NASA's public `DEMO_KEY` (which has stricter hourly/daily rate limits). To use your own free NASA Open APIs key locally:
-
-1. Copy `.env.example` to `.env.local` (never commit `.env.local`).
-2. Set:
-   ```env
-   VITE_NASA_API_KEY="YOUR_FREE_NASA_API_KEY"
+### Optional NASA API Key (`.env.local`)
+By default, `APOD` and `DONKI` requests use NASA's public `DEMO_KEY` (which has stricter hourly limits), while Mars Perseverance raw images and the NASA Image Library require no key. To use your own free NASA API key:
+1. Copy `.env.example` to `.env.local`:
+   ```bash
+   cp .env.example .env.local
    ```
-3. Restart the Vite dev server (`npm run dev`).
+2. Add your key in `.env.local`:
+   ```env
+   VITE_NASA_API_KEY=your_free_nasa_api_key
+   ```
+3. `.gitignore` ignores `.env` and `.env.*` files so keys are never committed to Git. *(Keep `.env.example` empty.)*
 
-### 12. Client-Side Environment Variable Security Note
-
-Any environment variable prefixed with `VITE_` is embedded directly into the client-side JavaScript bundle by Vite and is **publicly visible to anyone inspecting network requests or browser source code**.
-
-- **Only** use public/rate-limited client keys such as a free NASA Open APIs key in `VITE_NASA_API_KEY`.
-- **Never** place private secrets, database credentials, or server-only API keys (such as `GEMINI_API_KEY`) in any `VITE_` variable.
-
----
-
-## 13. NASA and CSA Data Sources
-
-Outpost Zero references the following seven official public space agency resources, clearly labeled by data category:
-
-- **NASA Open APIs (`Live Data`)**: APOD and DONKI API gateway (`https://api.nasa.gov/`).
-- **NASA DONKI (`Live Data` + `Archived Reference`)**: Solar Flares (`FLR`) and Coronal Mass Ejections (`CME`) (`https://kauai.ccmc.gsfc.nasa.gov/DONKI/`).
-- **NASA Image and Video Library (`Live Data`)**: Official Perseverance, Curiosity, and Mars imagery (`https://images.nasa.gov/`, `https://images-api.nasa.gov/search`).
-- **NASA OSDR (`Historical Research` + `Live Metadata Query`)**: Real spaceflight biology accessions (`OSD-352` bone, `OSD-47` muscle, `OSD-738` immune, `OSD-253` sleep/circadian) (`https://osdr.nasa.gov/`).
-- **NASA RadLab & MSL RAD (`Historical Research`)**: ISS TEPC (`~0.27–0.37 mGy/day`, `~0.50–1.0+ mSv/day`) and Curiosity RAD Mars surface (`~0.21–0.48 mGy/day`, `~0.64–0.67 mSv/day`) dosimetry (`https://visualization.osdr.nasa.gov/radlab/`). *Note: Absorbed dose (`mGy`) and dose equivalent (`mSv`) are distinct units, and ISS Low Earth Orbit measurements are never conflated with Mars surface data.*
-- **NASA Mars Trek (`Terrain Information`)**: Jezero Crater elevation (`~2,700 m` below datum, `~500–800+ m` rim relief) and rover hazard terrain context (`https://trek.nasa.gov/mars/`).
-- **Canadian Space Agency (`Educational Material`)**: Controlled Environment Agriculture (Naurvik, Deep Space Food Challenge), astronaut nutrition (`1,900–3,200 kcal/day`), crew health, and youth STEM programs (`https://www.asc-csa.gc.ca/eng/youth-educators/` & `https://www.asc-csa.gc.ca/eng/astronauts/living-in-space/eating-in-space.asp`).
-
-*Independent Educational Project Notice: Outpost Zero is not officially endorsed, sponsored, or affiliated with NASA or the Canadian Space Agency, and displays no official NASA logos.*
-
----
-
-## 14. Scientific Limitations
-
-- Habitat health (`Life Support`, `Power`, `Radiation Protection`) is modeled on a simplified `0–100%` scale for ages 7–12 rather than physical mass/energy units (kg, kWh, mSv).
-- Crop growth stages progress within a 10-Sol game window as a game-balancing assumption rather than real multi-week agricultural timelines.
-- The 4–24 minute one-way Earth–Mars light-time communication delay is shortened to a 6-second gameplay countdown.
-- Real Mars habitat engineering requires detailed thermal, chemical, orbital, and biomedical modeling.
-
----
-
-## 15. Offline Behavior and Archived Fallback
-
-Outpost Zero is built so the entire educational game works **without an internet connection**:
-
-- The Home Page, 10-Sol Mission Simulator, Greenhouse Subsystem, 12 Learn Modules, Knowledge Check Quiz, and `localStorage` save/restore run 100% client-side.
-- Validated live responses are cached locally with TTL (`15 min` for DONKI FLR/CME; `30 min` for APOD and NASA Image Library) and labeled `CACHED NASA DATA` when served from cache.
-- If any NASA API is offline, rate-limited (`HTTP 429`), times out, or returns zero/invalid records, `src/services/nasaDonkiService.ts` and `src/services/nasaMediaService.ts` fall back cleanly to archived educational reference datasets and display:
-  > *"NASA live data is temporarily unavailable. Showing archived educational information."*
-- The `REAL NASA DATA (LIVE)` badge is displayed **only** when validated records were freshly retrieved from a live NASA endpoint.
-
----
-
-## 16. Testing Instructions
-
-Run TypeScript type-checking (`tsc --noEmit`):
-
+### Verify Types, Tests & Production Build
 ```bash
 npm run lint
-```
-
-Run the automated unit & integration test suite (game engine, greenhouse rules, `localStorage` recovery, learn/quiz integrity, and NASA DONKI service fallback):
-
-```bash
 npx tsx --test tests/outpostZero.test.ts
-```
-
-Verify the production Vite bundle compiles cleanly:
-
-```bash
 npm run build
 ```
-
----
-
-## 17. Vercel Deployment Steps
-
-Outpost Zero builds as a static Single-Page Application (SPA) with Vite:
-
-1. Push the repository to GitHub, GitLab, or Bitbucket.
-2. Import the project in **Vercel**.
-3. Set **Framework Preset** to `Vite`.
-4. Confirm build settings:
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-5. *(Optional)* Add `VITE_NASA_API_KEY` in Vercel Project **Environment Variables** if you do not want to rely on `DEMO_KEY`.
-6. Deploy. Because navigation is handled via React state inside `src/App.tsx`, no custom server rewrites are needed.
-
----
-
-## 18. GitHub Pages Deployment Steps
-
-GitHub Pages is supported because Outpost Zero is a client-side Vite React SPA using state-based navigation.
-
-- **If deploying to a user/organization root site** (`https://<username>.github.io/`):
-  1. Run `npm run build`.
-  2. Publish the generated `dist/` folder to your `gh-pages` branch or GitHub Pages workflow.
-- **If deploying to a project subpath** (`https://<username>.github.io/<repo-name>/`):
-  `vite.config.ts` currently uses Vite's default `base: '/'`. Build with the repository base path flag so asset URLs resolve under the subpath:
-  ```bash
-  npx vite build --base=/<repo-name>/
-  ```
-  Then publish the contents of `dist/` using `gh-pages` or GitHub Actions (`actions/upload-pages-artifact` + `actions/deploy-pages`).
-
----
-
-## 19. Known Limitations and Future Improvements
-
-- **Known Limitations**:
-  - NASA `DEMO_KEY` shares public hourly/daily rate limits; heavy traffic without a custom `VITE_NASA_API_KEY` will trigger `HTTP 429` and fall back cleanly to cached or archived educational datasets.
-  - Client-side `DONKI` queries use the user's browser clock (`YYYY-MM-DD`); if a device clock is set to a future date, NASA's API may return no records and trigger the archived fallback.
-  - Mission persistence is browser-local (`localStorage`) with no cloud account sync.
-- **Future Improvements**:
-  - Add difficulty presets (Explorer vs. Flight Director modes) and classroom teacher summary exports.
-  - Expand the NASA Observatory with interactive Mars Trek elevation cross-sections and orbital geometry visualizers.
-  - Add keyboard-shortcut hints and printable mission certificates at the end of a successful 10-Sol run.

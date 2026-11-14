@@ -86,6 +86,11 @@ export function parseAndValidateGameState(raw: string | null): GameState | null 
       parsed.missionSeed = 1042;
     }
 
+    parsed.crew.members = parsed.crew.members.map((m) => ({
+      ...m,
+      health: typeof m.health === 'number' && Number.isFinite(m.health) ? m.health : 100,
+    }));
+
     if (
       !parsed.greenhouse ||
       !isValidPercent(parsed.greenhouse.health) ||
@@ -95,10 +100,17 @@ export function parseAndValidateGameState(raw: string | null): GameState | null 
     ) {
       parsed.greenhouse = createInitialGreenhouseState();
     } else {
+      parsed.greenhouse.lowPowerStreak =
+        typeof parsed.greenhouse.lowPowerStreak === 'number'
+          ? parsed.greenhouse.lowPowerStreak
+          : 0;
+      parsed.greenhouse.cropsSpoiled = Boolean(parsed.greenhouse.cropsSpoiled);
       parsed.greenhouse.cropGrowthStage = getCropGrowthStage(
-        parsed.greenhouse.cropGrowthProgress
+        parsed.greenhouse.cropGrowthProgress,
+        parsed.greenhouse.cropsSpoiled
       );
       parsed.greenhouse.harvestReadiness =
+        !parsed.greenhouse.cropsSpoiled &&
         parsed.greenhouse.cropGrowthProgress >= 100;
     }
 
@@ -120,6 +132,15 @@ export function parseAndValidateGameState(raw: string | null): GameState | null 
       !Array.isArray(parsed.radiationShelter.actionsUsedThisSol)
     ) {
       parsed.radiationShelter = createInitialRadiationShelterState();
+    } else {
+      parsed.radiationShelter.radiationLeakActive = Boolean(
+        parsed.radiationShelter.radiationLeakActive
+      );
+      parsed.radiationShelter.cumulativeDoseMSv =
+        typeof parsed.radiationShelter.cumulativeDoseMSv === 'number' &&
+        Number.isFinite(parsed.radiationShelter.cumulativeDoseMSv)
+          ? parsed.radiationShelter.cumulativeDoseMSv
+          : 0.67;
     }
 
     if (

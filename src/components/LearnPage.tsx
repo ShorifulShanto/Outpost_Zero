@@ -18,9 +18,11 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  KNOWLEDGE_QUIZ_QUESTIONS,
+  generateQuizBatch,
+  getModuleQuizVariants,
   LEARN_MODULES,
   LearningModule,
+  QuizQuestion,
 } from '../data/learnModules';
 import { AppRoute } from '../types/mission';
 import { recordQuizAnswered } from '../utils/explorerProgress';
@@ -69,9 +71,17 @@ export function LearnPage({
     LEARN_MODULES[0].id
   );
   const [activeVocabTerm, setActiveVocabTerm] = useState<string | null>(null);
+  const [moduleVariantIdx, setModuleVariantIdx] = useState<
+    Record<string, number>
+  >({});
   const [moduleAnswers, setModuleAnswers] = useState<Record<string, number>>({});
 
-  // Knowledge Check Quiz state
+  // Knowledge Check Quiz state (fresh batch on every attempt/solve)
+  const [quizBatch, setQuizBatch] = useState<QuizQuestion[]>(() =>
+    generateQuizBatch(12)
+  );
+  const [batchNumber, setBatchNumber] = useState(1);
+  const [recentQuestionIds, setRecentQuestionIds] = useState<string[]>([]);
   const [quizIndex, setQuizIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [quizScore, setQuizScore] = useState(0);
@@ -79,17 +89,33 @@ export function LearnPage({
 
   const activeModule =
     LEARN_MODULES.find((m) => m.id === selectedModuleId) ?? LEARN_MODULES[0];
-  const currentModuleAnswer = moduleAnswers[activeModule.id];
+  const activeVariantNumber = moduleVariantIdx[activeModule.id] ?? 0;
+  const modulePool: QuizQuestion[] = [
+    {
+      id: `${activeModule.id}-primary`,
+      moduleTitle: activeModule.title,
+      question: activeModule.quickQuestion.prompt,
+      options: activeModule.quickQuestion.options,
+      correctIndex: activeModule.quickQuestion.correctIndex,
+      explanation: activeModule.quickQuestion.feedbackCorrect,
+    },
+    ...getModuleQuizVariants(activeModule.title).filter(
+      (q) => q.question !== activeModule.quickQuestion.prompt
+    ),
+  ];
+  const currentQuickQ =
+    modulePool[activeVariantNumber % modulePool.length] ?? modulePool[0];
+  const moduleAnswerKey = `${activeModule.id}:${activeVariantNumber}`;
+  const currentModuleAnswer = moduleAnswers[moduleAnswerKey];
   const moduleAnswered = typeof currentModuleAnswer === 'number';
   const moduleCorrect =
-    moduleAnswered &&
-    currentModuleAnswer === activeModule.quickQuestion.correctIndex;
+    moduleAnswered && currentModuleAnswer === currentQuickQ.correctIndex;
 
-  const activeQuizQ = KNOWLEDGE_QUIZ_QUESTIONS[quizIndex];
+  const activeQuizQ = quizBatch[quizIndex] ?? quizBatch[0];
   const quizAnswered = selectedOption !== null;
   const quizProgressPct = Math.round(
     ((quizIndex + (quizAnswered || quizFinished ? 1 : 0)) /
-      KNOWLEDGE_QUIZ_QUESTIONS.length) *
+      Math.max(1, quizBatch.length)) *
       100
   );
 
@@ -99,11 +125,18 @@ export function LearnPage({
   };
 
   const handleModuleQuestionSelect = (optionIdx: number) => {
-    const alreadyAnswered = typeof moduleAnswers[activeModule.id] === 'number';
-    setModuleAnswers((prev) => ({ ...prev, [activeModule.id]: optionIdx }));
+    const alreadyAnswered = typeof moduleAnswers[moduleAnswerKey] === 'number';
+    setModuleAnswers((prev) => ({ ...prev, [moduleAnswerKey]: optionIdx }));
     if (!alreadyAnswered) {
-      recordQuizAnswered(optionIdx === activeModule.quickQuestion.correctIndex);
+      recordQuizAnswered(optionIdx === currentQuickQ.correctIndex);
     }
+  };
+
+  const handleNextModuleQuestion = () => {
+    setModuleVariantIdx((prev) => ({
+      ...prev,
+      [activeModule.id]: (prev[activeModule.id] ?? 0) + 1,
+    }));
   };
 
   const handleQuizOptionSelect = (optionIdx: number) => {
@@ -117,7 +150,7 @@ export function LearnPage({
   };
 
   const handleNextQuizQuestion = () => {
-    if (quizIndex + 1 >= KNOWLEDGE_QUIZ_QUESTIONS.length) {
+    if (quizIndex + 1 >= quizBatch.length) {
       setQuizFinished(true);
     } else {
       setQuizIndex((prev) => prev + 1);
@@ -125,7 +158,14 @@ export function LearnPage({
     }
   };
 
-  const handleRestartQuiz = () => {
+  const handleNewQuizBatch = () => {
+    const updatedRecent = [
+      ...quizBatch.map((q) => q.id),
+      ...recentQuestionIds,
+    ].slice(0, 24);
+    setRecentQuestionIds(updatedRecent);
+    setQuizBatch(generateQuizBatch(12, updatedRecent));
+    setBatchNumber((prev) => prev + 1);
     setQuizIndex(0);
     setSelectedOption(null);
     setQuizScore(0);
@@ -202,7 +242,10 @@ export function LearnPage({
             <div className="mt-3 space-y-1.5">
               {LEARN_MODULES.map((mod) => {
                 const isSelected = mod.id === activeModule.id;
-                const done = typeof moduleAnswers[mod.id] === 'number';
+                const done =
+                  typeof moduleAnswers[`${mod.id}:0`] === 'number' ||
+                  typeof moduleAnswers[`${mod.id}:${moduleVariantIdx[mod.id] ?? 0}`] ===
+                    'number';
                 return (
                   <button
                     key={mod.id}
@@ -362,20 +405,31 @@ export function LearnPage({
               )}
             </div>
 
-            {/* Short Inline Knowledge Question */}
+            {/* Short Inline Knowledge Question (rotates new questions on retry) */}
             <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-4 sm:p-5 space-y-3">
-              <h3 className="font-display text-sm font-semibold text-[#FFB547]">
-                Quick Check: {activeModule.quickQuestion.prompt}
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-display text-sm font-semibold text-[#FFB547]">
+                  Quick Check: {currentQuickQ.question}
+                </h3>
+                {modulePool.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleNextModuleQuestion}
+                    className="inline-flex items-center gap-1.5 min-h-[32px] px-2.5 py-1 rounded border border-[#293A54] hover:border-[#29B6F6] text-[11px] font-semibold text-[#29B6F6] cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>New Question</span>
+                  </button>
+                )}
+              </div>
 
               <div className="space-y-2">
-                {activeModule.quickQuestion.options.map((opt, idx) => {
+                {currentQuickQ.options.map((opt, idx) => {
                   const isChosen = currentModuleAnswer === idx;
-                  const isRightOption =
-                    idx === activeModule.quickQuestion.correctIndex;
+                  const isRightOption = idx === currentQuickQ.correctIndex;
                   return (
                     <button
-                      key={opt}
+                      key={`${moduleAnswerKey}-${opt}`}
                       type="button"
                       onClick={() => handleModuleQuestionSelect(idx)}
                       className={`w-full text-left min-h-[44px] px-4 py-2.5 rounded-lg border text-xs sm:text-sm transition-colors cursor-pointer ${
@@ -393,16 +447,30 @@ export function LearnPage({
               </div>
 
               {moduleAnswered && (
-                <p
-                  role="status"
-                  className={`text-xs sm:text-sm font-medium ${
-                    moduleCorrect ? 'text-[#29B6F6]' : 'text-[#FFB547]'
-                  }`}
-                >
-                  {moduleCorrect
-                    ? activeModule.quickQuestion.feedbackCorrect
-                    : activeModule.quickQuestion.feedbackIncorrect}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <p
+                    role="status"
+                    className={`text-xs sm:text-sm font-medium ${
+                      moduleCorrect ? 'text-[#29B6F6]' : 'text-[#FFB547]'
+                    }`}
+                  >
+                    {activeVariantNumber === 0
+                      ? moduleCorrect
+                        ? activeModule.quickQuestion.feedbackCorrect
+                        : activeModule.quickQuestion.feedbackIncorrect
+                      : currentQuickQ.explanation}
+                  </p>
+                  {modulePool.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleNextModuleQuestion}
+                      className="inline-flex items-center gap-1.5 min-h-[34px] px-3 py-1 rounded-md bg-[#1E3353] hover:border-[#29B6F6] border border-[#293A54] text-xs font-semibold text-[#EAF2FF] cursor-pointer shrink-0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#29B6F6]" />
+                      <span>Try Another Question</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -453,16 +521,26 @@ export function LearnPage({
           aria-label="Knowledge Check Quiz"
           className="max-w-[820px] mx-auto rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-8 space-y-6"
         >
-          {/* Progress Bar & Score */}
+          {/* Progress Bar, Batch Indicator & Score */}
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
-              <span className="font-mono-tabular font-semibold text-[#29B6F6]">
-                {quizFinished
-                  ? 'Quiz Complete'
-                  : `Question ${quizIndex + 1} of ${KNOWLEDGE_QUIZ_QUESTIONS.length}`}
-              </span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="font-mono-tabular font-semibold text-[#29B6F6]">
+                  {quizFinished
+                    ? `Batch #${batchNumber} Complete`
+                    : `Batch #${batchNumber} · Question ${quizIndex + 1} of ${quizBatch.length}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNewQuizBatch}
+                  className="inline-flex items-center gap-1 min-h-[30px] px-2.5 py-1 rounded border border-[#293A54] bg-[#080D1B] hover:border-[#29B6F6] text-[11px] font-semibold text-[#29B6F6] cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>New Question Batch</span>
+                </button>
+              </div>
               <span className="font-mono-tabular font-semibold text-[#EAF2FF]">
-                Score: {quizScore} / {KNOWLEDGE_QUIZ_QUESTIONS.length}
+                Score: {quizScore} / {quizBatch.length}
               </span>
             </div>
 
@@ -536,7 +614,7 @@ export function LearnPage({
                       className="inline-flex items-center gap-2 min-h-[42px] px-5 py-2 rounded-lg bg-[#E4774E] hover:bg-[#ec8761] text-[#080D1B] text-sm font-semibold cursor-pointer"
                     >
                       <span>
-                        {quizIndex + 1 >= KNOWLEDGE_QUIZ_QUESTIONS.length
+                        {quizIndex + 1 >= quizBatch.length
                           ? 'See Final Quiz Score'
                           : 'Next Question'}
                       </span>
@@ -550,22 +628,22 @@ export function LearnPage({
             <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-6 text-center space-y-4">
               <Award className="w-10 h-10 text-[#29B6F6] mx-auto" />
               <h2 className="font-display text-2xl sm:text-3xl font-bold text-[#EAF2FF]">
-                You Scored {quizScore} out of {KNOWLEDGE_QUIZ_QUESTIONS.length}!
+                You Scored {quizScore} out of {quizBatch.length}!
               </h2>
               <p className="text-sm sm:text-base text-[#A8B6CC] max-w-lg mx-auto leading-relaxed">
                 {quizScore >= 8
                   ? 'Outstanding Mars Commander! You understand how oxygen, solar power, radiation shields, and greenhouses work together.'
-                  : 'Well done exploring Mars science! Replay the quiz or review any module anytime to sharpen your survival engineering skills.'}
+                  : 'Well done exploring Mars science! Try a fresh question batch or review any module anytime to sharpen your survival skills.'}
               </p>
 
               <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={handleRestartQuiz}
-                  className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-lg bg-[#29B6F6] text-[#080D1B] text-sm font-semibold cursor-pointer"
+                  onClick={handleNewQuizBatch}
+                  className="inline-flex items-center gap-2 min-h-[44px] px-5 py-2.5 rounded-lg bg-[#29B6F6] hover:bg-[#4dc4f8] text-[#080D1B] text-sm font-semibold cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>Replay Quiz</span>
+                  <span>New Question Batch</span>
                 </button>
                 <button
                   type="button"

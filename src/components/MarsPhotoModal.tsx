@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,6 +42,8 @@ export function MarsPhotoModal({
 }: MarsPhotoModalProps) {
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
+  const [mainLoaded, setMainLoaded] = useState(false);
+  const mainImgRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,11 +68,21 @@ export function MarsPhotoModal({
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, photos.length, onClose]);
 
+  const photo = photos[activeIndex] ?? photos[0];
+  const hasLiveUrl = Boolean(photo?.imageUrl && !failedUrls[photo.nasaId]);
+  const displaySrc = hasLiveUrl ? photo!.imageUrl! : MARS_FALLBACK_IMAGE;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (mainImgRef.current?.complete && mainImgRef.current.naturalWidth > 0) {
+      setMainLoaded(true);
+    } else {
+      setMainLoaded(false);
+    }
+  }, [displaySrc, isOpen]);
+
   if (!isOpen || photos.length === 0) return null;
 
-  const photo = photos[activeIndex] ?? photos[0];
-  const hasLiveUrl = Boolean(photo.imageUrl && !failedUrls[photo.nasaId]);
-  const displaySrc = hasLiveUrl ? photo.imageUrl! : MARS_FALLBACK_IMAGE;
   const isApod = photo.nasaId.startsWith('APOD-');
   const nasaArchiveUrl =
     !isApod && photo.isLiveNasa && !photo.nasaId.includes('SIM-')
@@ -79,7 +91,7 @@ export function MarsPhotoModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#080D1B]/85 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#080D1B]/92"
       role="dialog"
       aria-modal="true"
       aria-labelledby="mars-photo-modal-title"
@@ -124,19 +136,32 @@ export function MarsPhotoModal({
         </div>
 
         {/* High-Resolution Image Viewport with Prev/Next Gallery Controls */}
-        <div className="relative bg-[#080D1B] border-b border-[#293A54]">
+        <div className="relative min-h-[220px] bg-[#080D1B] border-b border-[#293A54] flex items-center justify-center">
+          {!mainLoaded && (
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-[#111C32]/60 animate-pulse"
+            />
+          )}
           <img
+            ref={mainImgRef}
+            key={displaySrc}
             src={displaySrc}
             alt={
               hasLiveUrl
                 ? photo.title
-                : `${photo.title} (Simulated Mars terrain view)`
+                : `${photo.title} (AI-generated Mars terrain view)`
             }
+            decoding="async"
             referrerPolicy="no-referrer"
-            onError={() =>
-              setFailedUrls((prev) => ({ ...prev, [photo.nasaId]: true }))
-            }
-            className="w-full max-h-[380px] object-contain mx-auto block bg-[#080D1B]"
+            onLoad={() => setMainLoaded(true)}
+            onError={() => {
+              setMainLoaded(true);
+              setFailedUrls((prev) => ({ ...prev, [photo.nasaId]: true }));
+            }}
+            className={`w-full max-h-[380px] object-contain mx-auto block bg-[#080D1B] transition-opacity duration-200 ${
+              mainLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
 
           <div className="absolute bottom-3 right-3">
@@ -146,7 +171,7 @@ export function MarsPhotoModal({
                   ? isApod
                     ? 'Data: NASA APOD'
                     : 'Data: NASA Image Library'
-                  : 'Simulated Terrain'
+                  : 'AI-Generated Image · Saved'
               }
             />
           </div>
@@ -218,9 +243,16 @@ export function MarsPhotoModal({
                     <img
                       src={thumbHasLive ? item.imageUrl! : MARS_FALLBACK_IMAGE}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover block"
                     />
+                    {!thumbHasLive && (
+                      <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-[#080D1B]/90 text-[8px] font-mono-tabular font-semibold text-[#A8B6CC] leading-tight pointer-events-none">
+                        AI
+                      </span>
+                    )}
                   </button>
                 );
               })}

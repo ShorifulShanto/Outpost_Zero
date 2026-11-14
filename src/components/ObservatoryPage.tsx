@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -36,8 +36,10 @@ import {
   FeaturedMarsPhoto,
   fetchMarsImageLibrary,
   fetchNasaApod,
+  fetchRealtimeMarsRoverPhotos,
   MarsMissionFilter,
   NasaImageLibraryResult,
+  RealtimeMarsFeedResult,
   toOneSentence,
 } from '../services/nasaMediaService';
 import {
@@ -55,8 +57,11 @@ import {
   CornerWatermark,
   MARS_FALLBACK_IMAGE,
 } from './DataWatermark';
-import { MarsPhotoModal } from './MarsPhotoModal';
 import { PageBackButton } from './PageBackButton';
+
+const LazyMarsPhotoModal = lazy(() =>
+  import('./MarsPhotoModal').then((m) => ({ default: m.MarsPhotoModal }))
+);
 
 interface ObservatoryPageProps {
   onNavigate: (route: AppRoute) => void;
@@ -81,7 +86,7 @@ function SourceBadge({ source }: { source: NasaDataSource }) {
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-mono-tabular font-semibold text-[#FFB547] border border-[#FFB547]/60 bg-[#080D1B] px-2.5 py-1 rounded">
-      OFFLINE ARCHIVE
+      FROM SAVED DATA
     </span>
   );
 }
@@ -100,6 +105,61 @@ function formatUtcTimestamp(rawIso: string): string {
   });
 }
 
+interface AsyncNasaImageProps {
+  src: string;
+  alt: string;
+  className?: string;
+  priority?: 'high' | 'low';
+  onError?: () => void;
+}
+
+function AsyncNasaImage({
+  src,
+  alt,
+  className = '',
+  priority = 'low',
+  onError,
+}: AsyncNasaImageProps) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+      setLoaded(true);
+    } else {
+      setLoaded(false);
+    }
+  }, [src]);
+
+  return (
+    <div className="relative w-full h-full bg-[#0A1324]">
+      {!loaded && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[#13223D]/70 animate-pulse"
+        />
+      )}
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt}
+        loading={priority === 'high' ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={priority === 'high' ? 'high' : 'low'}
+        referrerPolicy="no-referrer"
+        onLoad={() => setLoaded(true)}
+        onError={() => {
+          setLoaded(true);
+          onError?.();
+        }}
+        className={`${className} transition-opacity duration-200 ${
+          loaded ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+    </div>
+  );
+}
+
 export function ObservatoryPage({
   onNavigate,
   previousRoute = null,
@@ -111,7 +171,17 @@ export function ObservatoryPage({
   const [flrResult, setFlrResult] = useState<DonkiFetchResult | null>(null);
   const [cmeResult, setCmeResult] = useState<DonkiCmeFetchResult | null>(null);
 
-  const [apodLoading, setApodLoading] = useState(true);
+  const [spotlightTab, setSpotlightTab] = useState<'mars-live' | 'apod'>('mars-live');
+  const [realtimeLoading, setRealtimeLoading] = useState(true);
+  const [realtimeMarsResult, setRealtimeMarsResult] =
+    useState<RealtimeMarsFeedResult | null>(null);
+  const [selectedRealtimeIdx, setSelectedRealtimeIdx] = useState(0);
+  const [brokenRealtimeIds, setBrokenRealtimeIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const [apodDate, setApodDate] = useState<string>('');
+  const [apodLoading, setApodLoading] = useState(false);
   const [apodResult, setApodResult] = useState<ApodFetchResult | null>(null);
   const [apodImgError, setApodImgError] = useState(false);
 
@@ -137,27 +207,78 @@ export function ObservatoryPage({
         fetchDonkiSolarFlares(days, { forceRefresh }),
         fetchDonkiCmes(days, { forceRefresh }),
       ]);
-      setFlrResult(flr);
-      setCmeResult(cme);
+      setFlrResult((prev) =>
+        forceRefresh && flr.source === 'archived' && prev && prev.source !== 'archived'
+          ? { ...prev, source: 'cached' }
+          : flr
+      );
+      setCmeResult((prev) =>
+        forceRefresh && cme.source === 'archived' && prev && prev.source !== 'archived'
+          ? { ...prev, source: 'cached' }
+          : cme
+      );
       setDonkiLoading(false);
     },
     []
   );
 
-  const loadApod = useCallback(async (forceRefresh = false) => {
-    setApodLoading(true);
-    setApodImgError(false);
-    const data = await fetchNasaApod({ forceRefresh });
-    setApodResult(data);
-    setApodLoading(false);
+  const loadRealtimeMars = useCallback(async (forceRefresh = false) => {
+    setRealtimeLoading(true);
+    const data = await fetchRealtimeMarsRoverPhotos({ forceRefresh });
+    setRealtimeMarsResult((prev) => {
+      if (
+        forceRefresh &&
+        data.source === 'archived' &&
+        prev &&
+        prev.source !== 'archived'
+      ) {
+        return { ...prev, source: 'cached' };
+      }
+      setBrokenRealtimeIds({});
+      setSelectedRealtimeIdx(0);
+      return data;
+    });
+    setRealtimeLoading(false);
   }, []);
+
+  const loadApod = useCallback(
+    async (forceRefresh = false, targetDate = '') => {
+      setApodLoading(true);
+      setApodImgError(false);
+      const data = await fetchNasaApod({
+        forceRefresh,
+        date: targetDate || undefined,
+      });
+      setApodResult((prev) =>
+        forceRefresh &&
+        !targetDate &&
+        data.source === 'archived' &&
+        prev &&
+        prev.source !== 'archived'
+          ? { ...prev, source: 'cached' }
+          : data
+      );
+      setApodLoading(false);
+    },
+    []
+  );
 
   const loadMarsImages = useCallback(
     async (filter: MarsMissionFilter, forceRefresh = false) => {
       setMarsImgLoading(true);
-      setBrokenMarsIds({});
       const data = await fetchMarsImageLibrary(filter, { forceRefresh });
-      setMarsImgResult(data);
+      setMarsImgResult((prev) => {
+        if (
+          forceRefresh &&
+          data.source === 'archived' &&
+          prev &&
+          prev.source !== 'archived'
+        ) {
+          return { ...prev, source: 'cached' };
+        }
+        setBrokenMarsIds({});
+        return data;
+      });
       setMarsImgLoading(false);
     },
     []
@@ -175,8 +296,14 @@ export function ObservatoryPage({
   }, [daysWindow, loadDonki]);
 
   useEffect(() => {
-    void loadApod();
-  }, [loadApod]);
+    void loadRealtimeMars();
+  }, [loadRealtimeMars]);
+
+  useEffect(() => {
+    if (spotlightTab === 'apod' && !apodResult && !apodLoading) {
+      void loadApod(false, apodDate);
+    }
+  }, [spotlightTab, apodResult, apodLoading, apodDate, loadApod]);
 
   useEffect(() => {
     void loadMarsImages(marsFilter);
@@ -204,6 +331,27 @@ export function ObservatoryPage({
     setPhotoModalState({ photos: mapped, initialIndex: index });
   };
 
+  const openRealtimeModal = (index: number) => {
+    if (!realtimeMarsResult || realtimeMarsResult.photos.length === 0) return;
+    recordPhotoInspected();
+    const mapped: FeaturedMarsPhoto[] = realtimeMarsResult.photos.map((photo) => {
+      const hasLive = Boolean(photo.imageUrl && !brokenRealtimeIds[photo.id]);
+      return {
+        imageUrl: hasLive ? photo.hdUrl ?? photo.imageUrl : null,
+        isLiveNasa: hasLive,
+        source: realtimeMarsResult.source,
+        title: photo.title,
+        caption: photo.caption,
+        fullDescription: photo.fullCaption,
+        nasaId: photo.id,
+        dateCreated:
+          photo.sol !== null ? `Sol ${photo.sol} (${photo.dateTaken})` : photo.dateTaken,
+        missionTag: photo.camera,
+      };
+    });
+    setPhotoModalState({ photos: mapped, initialIndex: index });
+  };
+
   const openApodModal = () => {
     if (!apodResult) return;
     recordPhotoInspected();
@@ -211,7 +359,7 @@ export function ObservatoryPage({
     setPhotoModalState({
       photos: [
         {
-          imageUrl: usingLiveApodImage ? rec.hdUrl ?? rec.url : null,
+          imageUrl: usingLiveApodImage ? rec.url ?? rec.hdUrl : null,
           isLiveNasa: usingLiveApodImage,
           source: apodResult.source,
           title: rec.title,
@@ -233,6 +381,12 @@ export function ObservatoryPage({
     ) ?? [];
 
   const usingLiveApodImage = Boolean(apodResult?.record.url && !apodImgError);
+  const activeRealtimePhotos = realtimeMarsResult?.photos ?? [];
+  const activeRealtimePhoto =
+    activeRealtimePhotos[selectedRealtimeIdx] ?? activeRealtimePhotos[0] ?? null;
+  const usingLiveRealtimeImage = Boolean(
+    activeRealtimePhoto?.imageUrl && !brokenRealtimeIds[activeRealtimePhoto.id]
+  );
 
   return (
     <div className="min-h-[calc(100vh-72px)] flex flex-col justify-between">
@@ -248,23 +402,33 @@ export function ObservatoryPage({
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 text-xs font-medium text-[#29B6F6]">
               <Telescope className="w-4 h-4" />
-              <span>Real Space Photos, Solar Storms &amp; Science Data</span>
+              <span>Space Photos, Solar Storms &amp; Science Data</span>
             </div>
             <h1 className="mt-2 font-display text-2xl sm:text-4xl font-bold text-[#EAF2FF] [text-wrap:balance]">
               NASA &amp; Space Observatory
             </h1>
             <p className="mt-2.5 text-sm sm:text-base text-[#A8B6CC] leading-relaxed">
-              See real Mars rover photos, NASA’s Astronomy Picture of the Day, live solar
-              flares, and space-biology findings—kept simple and clear.
+              Browse Mars rover photos, Astronomy Picture of the Day, solar flares,
+              and space-biology findings—switching automatically to saved data if live
+              feeds are unavailable.
             </p>
           </div>
 
           <button
             type="button"
-            disabled={donkiLoading || apodLoading || marsImgLoading || osdrLoading}
+            disabled={
+              donkiLoading ||
+              realtimeLoading ||
+              apodLoading ||
+              marsImgLoading ||
+              osdrLoading
+            }
             onClick={() => {
               void loadDonki(daysWindow, true);
-              void loadApod(true);
+              void loadRealtimeMars(true);
+              if (spotlightTab === 'apod') {
+                void loadApod(true, apodDate);
+              }
               void loadMarsImages(marsFilter, true);
               void loadOsdr(true);
             }}
@@ -272,7 +436,11 @@ export function ObservatoryPage({
           >
             <RefreshCw
               className={`w-4 h-4 ${
-                donkiLoading || apodLoading || marsImgLoading || osdrLoading
+                donkiLoading ||
+                realtimeLoading ||
+                apodLoading ||
+                marsImgLoading ||
+                osdrLoading
                   ? 'animate-spin'
                   : ''
               }`}
@@ -281,9 +449,9 @@ export function ObservatoryPage({
           </button>
         </section>
 
-        {/* 1. NASA ASTRONOMY PICTURE OF THE DAY (APOD) */}
+        {/* 1. REAL-TIME MARS ROVER SURFACE PHOTOS & NASA APOD */}
         <section
-          aria-label="NASA Astronomy Picture of the Day"
+          aria-label="Real-Time Mars Surface Photos and Astronomy Picture of the Day"
           className="relative rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#293A54]">
@@ -291,21 +459,223 @@ export function ObservatoryPage({
               <ImageIcon className="w-5 h-5 text-[#29B6F6] shrink-0" />
               <div>
                 <h2 className="font-display text-lg sm:text-xl font-semibold text-[#EAF2FF]">
-                  Astronomy Picture of the Day (APOD)
+                  {spotlightTab === 'mars-live'
+                    ? 'Real-Time Mars Surface Photos (Perseverance)'
+                    : 'Astronomy Picture of the Day (APOD)'}
                 </h2>
                 <p className="text-xs text-[#A8B6CC]">
-                  {apodResult?.record.date ?? 'Loading date...'}
+                  {spotlightTab === 'mars-live'
+                    ? activeRealtimePhoto
+                      ? `${activeRealtimePhoto.sol !== null ? `Sol ${activeRealtimePhoto.sol} · ` : ''}${activeRealtimePhoto.dateTaken} · ${activeRealtimePhoto.camera}`
+                      : 'Checking latest Mars rover downlink...'
+                    : apodResult?.record.date ?? 'Loading date...'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {!apodLoading && apodResult && <SourceBadge source={apodResult.source} />}
-              <CornerWatermark label="Data: NASA APOD" />
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className="inline-flex p-1 rounded-lg bg-[#080D1B] border border-[#293A54]"
+                role="tablist"
+                aria-label="Featured space photo feed"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={spotlightTab === 'mars-live'}
+                  onClick={() => setSpotlightTab('mars-live')}
+                  className={`min-h-[34px] px-3 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                    spotlightTab === 'mars-live'
+                      ? 'bg-[#1E3353] text-[#29B6F6]'
+                      : 'text-[#A8B6CC] hover:text-[#EAF2FF]'
+                  }`}
+                >
+                  Live Mars Rover
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={spotlightTab === 'apod'}
+                  onClick={() => setSpotlightTab('apod')}
+                  className={`min-h-[34px] px-3 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                    spotlightTab === 'apod'
+                      ? 'bg-[#1E3353] text-[#29B6F6]'
+                      : 'text-[#A8B6CC] hover:text-[#EAF2FF]'
+                  }`}
+                >
+                  NASA APOD
+                </button>
+              </div>
+
+              {spotlightTab === 'mars-live' &&
+                !realtimeLoading &&
+                realtimeMarsResult && (
+                  <>
+                    <SourceBadge source={realtimeMarsResult.source} />
+                    {realtimeMarsResult.source !== 'archived' && (
+                      <CornerWatermark label="Data: NASA Mars 2020" />
+                    )}
+                  </>
+                )}
+
+              {spotlightTab === 'apod' && !apodLoading && apodResult && (
+                <>
+                  <SourceBadge source={apodResult.source} />
+                  {apodResult.source !== 'archived' && (
+                    <CornerWatermark label="Data: NASA APOD" />
+                  )}
+                </>
+              )}
             </div>
           </div>
 
-          {apodLoading && (
+          {spotlightTab === 'mars-live' && realtimeLoading && !realtimeMarsResult && (
+            <div
+              role="status"
+              className="rounded-lg bg-[#080D1B] border border-[#293A54] p-6 text-center text-sm text-[#29B6F6]"
+            >
+              Loading real-time Mars photos from Perseverance Rover...
+            </div>
+          )}
+
+          {spotlightTab === 'mars-live' && activeRealtimePhoto && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div className="lg:col-span-5 space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => openRealtimeModal(selectedRealtimeIdx)}
+                    aria-label={`Inspect real-time Mars photo: ${activeRealtimePhoto.title}`}
+                    className="relative w-full rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] overflow-hidden group cursor-pointer text-left transition-colors block"
+                  >
+                    <div className="w-full h-56 overflow-hidden">
+                      <AsyncNasaImage
+                        priority="high"
+                        src={
+                          usingLiveRealtimeImage
+                            ? activeRealtimePhoto.imageUrl!
+                            : MARS_FALLBACK_IMAGE
+                        }
+                        alt={
+                          usingLiveRealtimeImage
+                            ? activeRealtimePhoto.title
+                            : 'AI-generated Martian landscape fallback while live feed is offline'
+                        }
+                        onError={() =>
+                          setBrokenRealtimeIds((prev) => ({
+                            ...prev,
+                            [activeRealtimePhoto.id]: true,
+                          }))
+                        }
+                        className="w-full h-56 object-cover block transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </div>
+                    <div className="absolute top-2.5 right-2.5 w-8 h-8 rounded-md bg-[#080D1B]/80 border border-[#293A54] text-[#EAF2FF] flex items-center justify-center opacity-85 group-hover:opacity-100">
+                      <Maximize2 className="w-4 h-4" />
+                    </div>
+                    {!usingLiveRealtimeImage && (
+                      <div className="absolute bottom-2 right-2">
+                        <CornerWatermark label="AI-Generated Image · Saved" />
+                      </div>
+                    )}
+                  </button>
+
+                  {activeRealtimePhotos.length > 1 && (
+                    <div
+                      className="grid grid-cols-4 gap-2"
+                      role="group"
+                      aria-label="Latest real-time Mars photos"
+                    >
+                      {activeRealtimePhotos.map((photo, idx) => {
+                        const isSelected = idx === selectedRealtimeIdx;
+                        const hasThumb = Boolean(
+                          (photo.thumbUrl ?? photo.imageUrl) &&
+                            !brokenRealtimeIds[photo.id]
+                        );
+                        return (
+                          <button
+                            key={photo.id}
+                            type="button"
+                            onClick={() => setSelectedRealtimeIdx(idx)}
+                            aria-label={`Select Mars photo ${idx + 1}: ${photo.title}`}
+                            aria-pressed={isSelected}
+                            className={`relative h-14 rounded-md overflow-hidden border transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-[#29B6F6] ring-1 ring-[#29B6F6]'
+                                : 'border-[#293A54] hover:border-[#29B6F6]/60 opacity-75 hover:opacity-100'
+                            }`}
+                          >
+                            <AsyncNasaImage
+                              src={
+                                hasThumb
+                                  ? (photo.thumbUrl ?? photo.imageUrl)!
+                                  : MARS_FALLBACK_IMAGE
+                              }
+                              alt={photo.title}
+                              onError={() =>
+                                setBrokenRealtimeIds((prev) => ({
+                                  ...prev,
+                                  [photo.id]: true,
+                                }))
+                              }
+                              className="w-full h-full object-cover block"
+                            />
+                            {photo.sol !== null && (
+                              <span className="absolute bottom-0.5 left-0.5 px-1 rounded bg-[#080D1B]/85 text-[9px] font-mono-tabular text-[#EAF2FF]">
+                                Sol {photo.sol}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="lg:col-span-7 space-y-3 self-center">
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular text-[#29B6F6]">
+                    <span>{activeRealtimePhoto.camera}</span>
+                    {activeRealtimePhoto.sol !== null && (
+                      <span className="text-[#FFB547]">
+                        · Mars Sol {activeRealtimePhoto.sol}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-display text-lg sm:text-xl font-bold text-[#EAF2FF]">
+                    {activeRealtimePhoto.title}
+                  </h3>
+                  <p className="text-sm text-[#A8B6CC] leading-relaxed">
+                    {activeRealtimePhoto.caption}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-[#293A54] text-xs text-[#A8B6CC]">
+                    <span>Credit: {activeRealtimePhoto.credit}</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openRealtimeModal(selectedRealtimeIdx)}
+                        className="font-medium text-[#EAF2FF] hover:text-[#29B6F6] cursor-pointer"
+                      >
+                        Inspect Larger
+                      </button>
+                      {(activeRealtimePhoto.link || activeRealtimePhoto.hdUrl) && (
+                        <a
+                          href={
+                            activeRealtimePhoto.link ?? activeRealtimePhoto.hdUrl!
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 font-medium text-[#29B6F6] hover:text-[#EAF2FF]"
+                        >
+                          <span>Open NASA Source</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {spotlightTab === 'apod' && apodLoading && !apodResult && (
             <div
               role="status"
               className="rounded-lg bg-[#080D1B] border border-[#293A54] p-6 text-center text-sm text-[#29B6F6]"
@@ -314,62 +684,101 @@ export function ObservatoryPage({
             </div>
           )}
 
-          {!apodLoading && apodResult && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
-              <button
-                type="button"
-                onClick={openApodModal}
-                aria-label={`Inspect full APOD image: ${apodResult.record.title}`}
-                className="relative lg:col-span-5 rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] overflow-hidden group cursor-pointer text-left transition-colors"
-              >
-                <img
-                  src={usingLiveApodImage ? apodResult.record.url! : MARS_FALLBACK_IMAGE}
-                  alt={
-                    usingLiveApodImage
-                      ? apodResult.record.title
-                      : 'Simulated Martian landscape fallback while APOD is offline'
-                  }
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  onError={() => setApodImgError(true)}
-                  className="w-full h-56 object-cover block transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute top-2.5 right-2.5 w-8 h-8 rounded-md bg-[#080D1B]/80 border border-[#293A54] text-[#EAF2FF] flex items-center justify-center opacity-85 group-hover:opacity-100">
-                  <Maximize2 className="w-4 h-4" />
-                </div>
-                <div className="absolute bottom-2 right-2">
-                  <CornerWatermark
-                    label={
-                      usingLiveApodImage
-                        ? 'Data: NASA APOD'
-                        : 'Simulated Terrain (Offline)'
-                    }
+          {spotlightTab === 'apod' && apodResult && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#080D1B] border border-[#293A54] px-3.5 py-2 text-xs">
+                <span className="text-[#A8B6CC]">
+                  Showing APOD for{' '}
+                  <strong className="font-mono-tabular text-[#EAF2FF]">
+                    {apodResult.record.date}
+                  </strong>
+                  {apodResult.source === 'archived' && ' (Saved fallback)'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="apod-date-picker" className="text-[#A8B6CC]">
+                    Check Date:
+                  </label>
+                  <input
+                    id="apod-date-picker"
+                    type="date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    min="2015-01-01"
+                    value={apodDate}
+                    onChange={(e) => {
+                      const nextDate = e.target.value;
+                      setApodDate(nextDate);
+                      void loadApod(false, nextDate);
+                    }}
+                    className="rounded border border-[#293A54] bg-[#111C32] px-2 py-1 text-xs font-mono-tabular text-[#EAF2FF]"
                   />
-                </div>
-              </button>
-
-              <div className="lg:col-span-7 space-y-2.5">
-                <h3 className="font-display text-lg sm:text-xl font-bold text-[#EAF2FF]">
-                  {apodResult.record.title}
-                </h3>
-                <p className="text-sm text-[#A8B6CC] leading-relaxed">
-                  {toOneSentence(apodResult.record.explanation, 165)}
-                </p>
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#293A54] text-xs text-[#A8B6CC]">
-                  <span>
-                    Credit: {apodResult.record.copyright ?? 'NASA Public Archive'}
-                  </span>
-                  {apodResult.record.hdUrl && (
-                    <a
-                      href={apodResult.record.hdUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 font-medium text-[#29B6F6] hover:text-[#EAF2FF]"
+                  {apodDate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApodDate('');
+                        void loadApod(false, '');
+                      }}
+                      className="text-xs font-semibold text-[#29B6F6] hover:text-[#EAF2FF] cursor-pointer"
                     >
-                      <span>Open Full Image</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                      Latest
+                    </button>
                   )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+                <button
+                  type="button"
+                  onClick={openApodModal}
+                  aria-label={`Inspect full APOD image: ${apodResult.record.title}`}
+                  className="relative lg:col-span-5 rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] overflow-hidden group cursor-pointer text-left transition-colors"
+                >
+                  <div className="w-full h-56 overflow-hidden">
+                    <AsyncNasaImage
+                      priority="high"
+                      src={usingLiveApodImage ? apodResult.record.url! : MARS_FALLBACK_IMAGE}
+                      alt={
+                        usingLiveApodImage
+                          ? apodResult.record.title
+                          : 'AI-generated Martian landscape fallback while APOD is offline'
+                      }
+                      onError={() => setApodImgError(true)}
+                      className="w-full h-56 object-cover block transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                  <div className="absolute top-2.5 right-2.5 w-8 h-8 rounded-md bg-[#080D1B]/80 border border-[#293A54] text-[#EAF2FF] flex items-center justify-center opacity-85 group-hover:opacity-100">
+                    <Maximize2 className="w-4 h-4" />
+                  </div>
+                  {!usingLiveApodImage && (
+                    <div className="absolute bottom-2 right-2">
+                      <CornerWatermark label="AI-Generated Image · Saved" />
+                    </div>
+                  )}
+                </button>
+
+                <div className="lg:col-span-7 space-y-2.5">
+                  <h3 className="font-display text-lg sm:text-xl font-bold text-[#EAF2FF]">
+                    {apodResult.record.title}
+                  </h3>
+                  <p className="text-sm text-[#A8B6CC] leading-relaxed">
+                    {toOneSentence(apodResult.record.explanation, 165)}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#293A54] text-xs text-[#A8B6CC]">
+                    <span>
+                      Credit: {apodResult.record.copyright ?? 'NASA Public Archive'}
+                    </span>
+                    {apodResult.record.hdUrl && (
+                      <a
+                        href={apodResult.record.hdUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 font-medium text-[#29B6F6] hover:text-[#EAF2FF]"
+                      >
+                        <span>Open Full Image</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -386,7 +795,9 @@ export function ObservatoryPage({
               <Camera className="w-5 h-5 text-[#E4774E] shrink-0" />
               <div>
                 <h2 className="font-display text-lg sm:text-xl font-semibold text-[#EAF2FF]">
-                  Real Mars Rover &amp; Surface Photos
+                  {marsImgResult?.source === 'archived'
+                    ? 'Saved Mars Rover & Surface Photos'
+                    : 'Mars Rover & Surface Photos'}
                 </h2>
                 <p className="text-xs text-[#A8B6CC]">
                   Perseverance, Curiosity &amp; Jezero Crater imagery
@@ -426,7 +837,11 @@ export function ObservatoryPage({
               {!marsImgLoading && marsImgResult && (
                 <SourceBadge source={marsImgResult.source} />
               )}
-              <CornerWatermark label="Data: NASA Image Library" />
+              {!marsImgLoading &&
+                marsImgResult &&
+                marsImgResult.source !== 'archived' && (
+                  <CornerWatermark label="Data: NASA Image Library" />
+                )}
             </div>
           </div>
 
@@ -465,36 +880,30 @@ export function ObservatoryPage({
                     aria-label={`Inspect photo ${item.title}`}
                     className="rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] overflow-hidden flex flex-col justify-between text-left group cursor-pointer transition-colors"
                   >
-                    <div className="relative w-full">
-                      <img
+                    <div className="relative w-full h-44 overflow-hidden border-b border-[#293A54]">
+                      <AsyncNasaImage
                         src={hasLiveImg ? item.imageUrl! : MARS_FALLBACK_IMAGE}
                         alt={
                           hasLiveImg
                             ? item.title
-                            : `${item.title} (Offline terrain placeholder)`
+                            : `${item.title} (AI-generated terrain placeholder)`
                         }
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
                         onError={() =>
                           setBrokenMarsIds((prev) => ({
                             ...prev,
                             [item.nasaId]: true,
                           }))
                         }
-                        className="w-full h-44 object-cover block border-b border-[#293A54] transition-transform duration-300 group-hover:scale-105"
+                        className="w-full h-44 object-cover block transition-transform duration-300 group-hover:scale-105"
                       />
                       <div className="absolute top-2.5 right-2.5 w-8 h-8 rounded-md bg-[#080D1B]/80 border border-[#293A54] text-[#EAF2FF] flex items-center justify-center opacity-85 group-hover:opacity-100">
                         <Maximize2 className="w-4 h-4" />
                       </div>
-                      <div className="absolute bottom-2 right-2">
-                        <CornerWatermark
-                          label={
-                            hasLiveImg
-                              ? 'Data: NASA Image Library'
-                              : 'Simulated Terrain'
-                          }
-                        />
-                      </div>
+                      {!hasLiveImg && (
+                        <div className="absolute bottom-2 right-2">
+                          <CornerWatermark label="AI-Generated Image · Saved" />
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-4 space-y-1.5 flex-1 flex flex-col justify-between w-full">
@@ -531,7 +940,7 @@ export function ObservatoryPage({
         {/* 3. NASA DONKI SPACE WEATHER MONITOR (FLR & CME) */}
         <section
           aria-label="NASA DONKI Space Weather Events"
-          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-5"
+          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-5 [content-visibility:auto] [contain-intrinsic-size:auto_380px]"
         >
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#293A54]">
             <div className="flex items-center gap-2.5">
@@ -582,7 +991,7 @@ export function ObservatoryPage({
                       : 'text-[#A8B6CC] hover:text-[#EAF2FF]'
                   }`}
                 >
-                  CMEs
+                  Solar Clouds (CMEs)
                 </button>
               </div>
 
@@ -610,7 +1019,11 @@ export function ObservatoryPage({
               {!donkiLoading && activeDonkiResult && (
                 <SourceBadge source={activeDonkiResult.source} />
               )}
-              <CornerWatermark label="Data: NASA DONKI" />
+              {!donkiLoading &&
+                activeDonkiResult &&
+                activeDonkiResult.source !== 'archived' && (
+                  <CornerWatermark label="Data: NASA DONKI" />
+                )}
             </div>
           </div>
 
@@ -640,7 +1053,6 @@ export function ObservatoryPage({
                         >
                           Class {flare.classType}
                         </span>
-                        <CornerWatermark label="Data: NASA DONKI" />
                       </div>
                       <p className="mt-1.5 text-xs text-[#A8B6CC] leading-relaxed">
                         {info.explanation}
@@ -684,7 +1096,6 @@ export function ObservatoryPage({
                         >
                           {info.tier}
                         </span>
-                        <CornerWatermark label="Data: NASA DONKI" />
                       </div>
                       <p className="mt-1.5 text-xs text-[#A8B6CC] leading-relaxed">
                         {info.explanation}
@@ -715,7 +1126,7 @@ export function ObservatoryPage({
         {/* 4. NASA OSDR SPACE BIOLOGY STUDIES */}
         <section
           aria-label="NASA OSDR Space Biology Studies"
-          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-5"
+          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-5 [content-visibility:auto] [contain-intrinsic-size:auto_420px]"
         >
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-[#293A54]">
             <div className="flex items-center gap-2.5">
@@ -765,7 +1176,9 @@ export function ObservatoryPage({
                 ))}
               </div>
               {!osdrLoading && osdrResult && <SourceBadge source={osdrResult.source} />}
-              <CornerWatermark label="Data: NASA OSDR" />
+              {!osdrLoading && osdrResult && osdrResult.source !== 'archived' && (
+                <CornerWatermark label="Data: NASA OSDR" />
+              )}
             </div>
           </div>
 
@@ -781,7 +1194,6 @@ export function ObservatoryPage({
                       <span className="font-mono-tabular font-bold text-[#29B6F6]">
                         {study.accession} · {study.domainLabel}
                       </span>
-                      <CornerWatermark label="Data: NASA OSDR" />
                     </div>
                     <h3 className="font-display text-sm sm:text-base font-semibold text-[#EAF2FF]">
                       {study.title}
@@ -813,7 +1225,7 @@ export function ObservatoryPage({
         </section>
 
         {/* 5. RADLAB DOSIMETRY & MARS TREK TERRAIN */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch [content-visibility:auto] [contain-intrinsic-size:auto_420px]">
           <section
             aria-label="NASA RadLab Radiation Dosimetry Benchmarks"
             className="lg:col-span-7 rounded-xl bg-[#111C32] border border-[#293A54] p-6 space-y-4 flex flex-col justify-between"
@@ -823,7 +1235,7 @@ export function ObservatoryPage({
                 <div className="flex items-center gap-2">
                   <Shield className="w-5 h-5 text-[#E4774E] shrink-0" />
                   <h2 className="font-display text-lg font-semibold text-[#EAF2FF]">
-                    Radiation Measurements (RadLab &amp; MSL RAD)
+                    Radiation Levels (RadLab &amp; MSL RAD)
                   </h2>
                 </div>
                 <CornerWatermark label="Data: NASA RadLab" />
@@ -931,7 +1343,7 @@ export function ObservatoryPage({
         {/* 6. CANADIAN SPACE AGENCY (CSA) */}
         <section
           aria-label="Canadian Space Agency Resources"
-          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-4"
+          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-4 [content-visibility:auto] [contain-intrinsic-size:auto_320px]"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#293A54]">
             <div className="flex items-center gap-2">
@@ -954,7 +1366,6 @@ export function ObservatoryPage({
                     <span className="text-xs font-mono-tabular text-[#29B6F6]">
                       {res.topic}
                     </span>
-                    <CornerWatermark label="Resource: CSA" />
                   </div>
                   <h3 className="font-display text-sm sm:text-base font-semibold text-[#EAF2FF]">
                     {res.title}
@@ -980,7 +1391,7 @@ export function ObservatoryPage({
         {/* 7. COMPACT DATA DIRECTORY */}
         <section
           aria-label="Official Data Sources and Space Agency Resources"
-          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-4"
+          className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-7 space-y-4 [content-visibility:auto] [contain-intrinsic-size:auto_420px]"
         >
           <div className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-[#E4774E] shrink-0" />
@@ -1041,13 +1452,17 @@ export function ObservatoryPage({
 
       <CompactWatermarkFooter onNavigate={onNavigate} />
 
-      <MarsPhotoModal
-        isOpen={Boolean(photoModalState)}
-        photos={photoModalState?.photos ?? []}
-        initialIndex={photoModalState?.initialIndex ?? 0}
-        onClose={() => setPhotoModalState(null)}
-        onOpenSimulator={() => onNavigate('simulator')}
-      />
+      {photoModalState && (
+        <Suspense fallback={null}>
+          <LazyMarsPhotoModal
+            isOpen
+            photos={photoModalState.photos}
+            initialIndex={photoModalState.initialIndex}
+            onClose={() => setPhotoModalState(null)}
+            onOpenSimulator={() => onNavigate('simulator')}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

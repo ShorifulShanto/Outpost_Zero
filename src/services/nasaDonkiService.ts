@@ -61,6 +61,10 @@ export interface DonkiFetchOptions {
 }
 
 const DONKI_CACHE_TTL_MS = 15 * 60 * 1000;
+const DONKI_FETCH_TIMEOUT_MS = 4500;
+
+const inFlightFlr = new Map<string, Promise<DonkiFetchResult>>();
+const inFlightCme = new Map<string, Promise<DonkiCmeFetchResult>>();
 
 export const ARCHIVED_SOLAR_FLARE_DATASET: SolarFlareRecord[] = [
   {
@@ -155,7 +159,7 @@ export const ARCHIVED_CME_DATASET: CoronalMassEjectionRecord[] = [
 ];
 
 export const UNAVAILABLE_FALLBACK_MESSAGE =
-  'NASA live data is temporarily unavailable. Showing archived educational information.';
+  'From saved data (NASA live feed unavailable).';
 
 function formatUtcDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -276,25 +280,34 @@ export async function fetchDonkiSolarFlares(
     }
   }
 
-  const apiKey = getNasaApiKey();
-  const now = new Date();
-  const startDateObj = new Date(
-    now.getTime() - daysWindow * 24 * 60 * 60 * 1000
-  );
+  if (!options.forceRefresh) {
+    const existing = inFlightFlr.get(cacheKey);
+    if (existing) return existing;
+  }
 
-  const startDate = formatUtcDate(startDateObj);
-  const endDate = formatUtcDate(now);
-  const queryWindowLabel = `${startDate} to ${endDate} (UTC)`;
+  const runFetch = async (): Promise<DonkiFetchResult> => {
+    const apiKey = getNasaApiKey();
+    const now = new Date();
+    const startDateObj = new Date(
+      now.getTime() - daysWindow * 24 * 60 * 60 * 1000
+    );
 
-  const url = new URL('https://api.nasa.gov/DONKI/FLR');
-  url.searchParams.set('startDate', startDate);
-  url.searchParams.set('endDate', endDate);
-  url.searchParams.set('api_key', apiKey);
+    const startDate = formatUtcDate(startDateObj);
+    const endDate = formatUtcDate(now);
+    const queryWindowLabel = `${startDate} to ${endDate} (UTC)`;
 
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 8000);
+    const url = new URL('https://api.nasa.gov/DONKI/FLR');
+    url.searchParams.set('startDate', startDate);
+    url.searchParams.set('endDate', endDate);
+    url.searchParams.set('api_key', apiKey);
 
-  try {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      DONKI_FETCH_TIMEOUT_MS
+    );
+
+    try {
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -371,9 +384,19 @@ export async function fetchDonkiSolarFlares(
       fetchedAtIso: new Date().toISOString(),
       queryWindowLabel: 'Archived NASA DONKI reference events (2024)',
     };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  };
+
+  if (options.forceRefresh) {
+    return runFetch();
   }
+  const pending = runFetch().finally(() => {
+    inFlightFlr.delete(cacheKey);
+  });
+  inFlightFlr.set(cacheKey, pending);
+  return pending;
 }
 
 export async function fetchDonkiCmes(
@@ -393,25 +416,34 @@ export async function fetchDonkiCmes(
     }
   }
 
-  const apiKey = getNasaApiKey();
-  const now = new Date();
-  const startDateObj = new Date(
-    now.getTime() - daysWindow * 24 * 60 * 60 * 1000
-  );
+  if (!options.forceRefresh) {
+    const existing = inFlightCme.get(cacheKey);
+    if (existing) return existing;
+  }
 
-  const startDate = formatUtcDate(startDateObj);
-  const endDate = formatUtcDate(now);
-  const queryWindowLabel = `${startDate} to ${endDate} (UTC)`;
+  const runFetch = async (): Promise<DonkiCmeFetchResult> => {
+    const apiKey = getNasaApiKey();
+    const now = new Date();
+    const startDateObj = new Date(
+      now.getTime() - daysWindow * 24 * 60 * 60 * 1000
+    );
 
-  const url = new URL('https://api.nasa.gov/DONKI/CME');
-  url.searchParams.set('startDate', startDate);
-  url.searchParams.set('endDate', endDate);
-  url.searchParams.set('api_key', apiKey);
+    const startDate = formatUtcDate(startDateObj);
+    const endDate = formatUtcDate(now);
+    const queryWindowLabel = `${startDate} to ${endDate} (UTC)`;
 
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 8000);
+    const url = new URL('https://api.nasa.gov/DONKI/CME');
+    url.searchParams.set('startDate', startDate);
+    url.searchParams.set('endDate', endDate);
+    url.searchParams.set('api_key', apiKey);
 
-  try {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      DONKI_FETCH_TIMEOUT_MS
+    );
+
+    try {
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -514,9 +546,19 @@ export async function fetchDonkiCmes(
       fetchedAtIso: new Date().toISOString(),
       queryWindowLabel: 'Archived NASA DONKI CME reference events (2024)',
     };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  };
+
+  if (options.forceRefresh) {
+    return runFetch();
   }
+  const pending = runFetch().finally(() => {
+    inFlightCme.delete(cacheKey);
+  });
+  inFlightCme.set(cacheKey, pending);
+  return pending;
 }
 
 export function getDonkiRadiationContext(): DonkiRadiationContext {

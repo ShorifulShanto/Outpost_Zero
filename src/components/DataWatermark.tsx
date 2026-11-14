@@ -38,7 +38,7 @@ export function CompactWatermarkFooter({
     <footer className="border-t border-[#293A54] bg-[#080D1B]/95">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span className="font-display text-xs sm:text-sm font-semibold text-[#EAF2FF]">
               Outpost Zero
             </span>

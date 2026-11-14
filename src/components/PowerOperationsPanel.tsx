@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { ALTERNATIVE_POWER_CONCEPTS } from '../engine/missionData';
 import { GameState, PowerActionId } from '../types/mission';
+import { InfoHoverTip } from './InfoHoverTip';
 
 interface PowerOperationsPanelProps {
   gameState: GameState;
@@ -27,6 +28,8 @@ export function PowerOperationsPanel({
   const savingUsed = powerOps.actionsUsedThisSol.includes('toggle-power-saving');
   const cleanUsed = powerOps.actionsUsedThisSol.includes('clean-solar-panels');
   const blockedByStorm = powerOps.stormSeverity === 'Regional Storm';
+  const dustPct = Math.max(0, Math.min(100, powerOps.dustAccumulation));
+  const dustOverlayOpacity = Math.min(0.88, dustPct / 75);
 
   return (
     <section
@@ -41,66 +44,162 @@ export function PowerOperationsPanel({
           </div>
           <div>
             <h3 className="font-display text-base sm:text-lg font-semibold text-[#EAF2FF]">
-              Solar Power &amp; Dust Operations
+              Solar Power &amp; Mars Dust
             </h3>
             <p className="text-xs text-[#A8B6CC]">
-              Max Martian solar flux is ~45% of Earth · Dust builds ~0.2%/Sol in rover
-              studies
+              Mars gets less than half of Earth&apos;s sunlight, and red dust coats panels every day
             </p>
           </div>
         </div>
 
-        <span
-          className={`inline-flex items-center gap-1.5 text-xs font-semibold font-mono-tabular ${
-            blockedByStorm
-              ? 'text-[#E4774E]'
-              : powerOps.stormSeverity === 'Light Dust'
-                ? 'text-[#FFB547]'
-                : 'text-[#29B6F6]'
-          }`}
-        >
-          {blockedByStorm && <AlertTriangle className="w-3.5 h-3.5" />}
-          <span>Sky: {powerOps.stormSeverity}</span>
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <InfoHoverTip
+            label="Shared Batteries"
+            title="One Battery Feeds the Whole Base"
+            body={`Greenhouse grow lights (${greenhouse.powerConsumption} use), cabin heaters, and air fans all share the same batteries.`}
+            accent="amber"
+          />
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold font-mono-tabular ${
+              blockedByStorm
+                ? 'text-[#E4774E]'
+                : powerOps.stormSeverity === 'Light Dust'
+                  ? 'text-[#FFB547]'
+                  : 'text-[#29B6F6]'
+            }`}
+          >
+            {blockedByStorm && <AlertTriangle className="w-3.5 h-3.5" />}
+            <span>Sky: {powerOps.stormSeverity}</span>
+          </span>
+        </div>
       </div>
 
-      {/* Power Telemetry Grid */}
+      {/* Kid-Friendly Visual Diagram: How Dust Falling on Solar Panels Blocks Sunlight */}
+      <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        <svg
+          viewBox="0 0 220 78"
+          className="w-full sm:w-[210px] h-auto shrink-0 rounded bg-[#0A1324] border border-[#293A54]/70"
+          role="img"
+          aria-label={`Visual solar panel showing ${dustPct}% Martian dust coating`}
+        >
+          {/* Sun & Light Rays */}
+          <circle cx="28" cy="20" r="9" fill="#FFB547" fillOpacity={blockedByStorm ? 0.35 : 0.9} />
+          <g
+            stroke="#FFB547"
+            strokeWidth="1.6"
+            strokeDasharray="3 3"
+            strokeOpacity={blockedByStorm ? 0.28 : 0.75}
+          >
+            <line x1="40" y1="22" x2="88" y2="34" />
+            <line x1="36" y1="30" x2="72" y2="44" />
+          </g>
+
+          {/* Tilted Solar Panel */}
+          <polygon
+            points="66,46 154,28 176,56 88,72"
+            fill="#17355E"
+            stroke="#29B6F6"
+            strokeWidth="1.4"
+          />
+          {/* Blue Solar Cell Grid */}
+          <g stroke="#62B6FF" strokeOpacity="0.45" strokeWidth="1">
+            <line x1="95" y1="40" x2="117" y2="66" />
+            <line x1="125" y1="34" x2="147" y2="60" />
+            <line x1="77" y1="59" x2="165" y2="42" />
+          </g>
+
+          {/* Falling / Settled Red Mars Dust Layer */}
+          {dustPct > 0 && (
+            <g>
+              <polygon
+                points="66,46 154,28 176,56 88,72"
+                fill="#C9643B"
+                fillOpacity={dustOverlayOpacity}
+              />
+              <g fill="#F09A6E" fillOpacity={Math.min(0.95, dustOverlayOpacity + 0.2)}>
+                <circle cx="98" cy="48" r="1.6" />
+                <circle cx="118" cy="44" r="2" />
+                <circle cx="142" cy="39" r="1.5" />
+                <circle cx="110" cy="59" r="1.8" />
+                <circle cx="135" cy="54" r="2.1" />
+                <circle cx="154" cy="49" r="1.4" />
+                <circle cx="122" cy="18" r="1.2" />
+                <circle cx="148" cy="15" r="1.3" />
+                <circle cx="164" cy="22" r="1.1" />
+              </g>
+            </g>
+          )}
+
+          {/* Status Pill Inside SVG */}
+          <text
+            x="196"
+            y="24"
+            textAnchor="middle"
+            fill={dustPct >= 20 ? '#FFB547' : '#29B6F6'}
+            fontSize="11"
+            fontWeight="700"
+            fontFamily="JetBrains Mono, monospace"
+          >
+            {dustPct}%
+          </text>
+          <text
+            x="196"
+            y="36"
+            textAnchor="middle"
+            fill="#A8B6CC"
+            fontSize="8.5"
+          >
+            DUST
+          </text>
+        </svg>
+
+        <div className="space-y-1 text-xs">
+          <p className="font-semibold text-[#EAF2FF]">
+            {blockedByStorm
+              ? 'Dust Storm Blowing: Sunlight Is Dimmed!'
+              : dustPct >= 25
+                ? 'Panels Are Dusty — Sunlight Is Blocked!'
+                : dustPct >= 10
+                  ? 'Light Mars Dust Settling on Panels'
+                  : 'Solar Panels Are Clean & Charging Fast!'}
+          </p>
+          <p className="text-[#A8B6CC] leading-relaxed">
+            {blockedByStorm
+              ? 'High winds scatter red dust in the sky and coat solar wings. Wait for calm weather before stepping outside to brush them.'
+              : 'Fine red Mars dust settles onto blue solar cells like powder, blocking sunlight. Brushing them clean boosts your power right away!'}
+          </p>
+        </div>
+      </div>
+
+      {/* Power Metrics Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Solar Output</p>
+          <p className="text-xs text-[#A8B6CC]">Sunlight Power</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#EAF2FF]">
             {resources.solarGeneration}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Battery Reserve</p>
+          <p className="text-xs text-[#A8B6CC]">Battery Charge</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#29B6F6]">
             {resources.batteryReserve}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Panel Dust</p>
+          <p className="text-xs text-[#A8B6CC]">Dust on Panels</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#FFB547]">
             {powerOps.dustAccumulation}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Power Mode</p>
+          <p className="text-xs text-[#A8B6CC]">Power Saver</p>
           <p className="mt-1 font-mono-tabular text-sm font-bold text-[#EAF2FF]">
-            {powerOps.powerSavingMode ? 'Power-Saving' : resources.energyConsumption}
+            {powerOps.powerSavingMode ? 'On (Saving)' : resources.energyConsumption}
           </p>
         </div>
-      </div>
-
-      {/* Competing Load Note */}
-      <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3.5 text-xs text-[#A8B6CC] leading-relaxed">
-        <strong className="text-[#EAF2FF]">Competing Power Loads:</strong> Greenhouse
-        grow lights (<strong className="text-[#FFB547]">{greenhouse.powerConsumption}</strong>
-        ), life-support heaters, and air scrubbers share the same batteries. Dust storms
-        reduce solar charging partially—not to zero—making load management vital.
       </div>
 
       {/* Interactive Power Actions */}
@@ -116,8 +215,8 @@ export function PowerOperationsPanel({
               <BatteryCharging className="w-4 h-4 text-[#29B6F6] shrink-0" />
               <span>
                 {powerOps.powerSavingMode
-                  ? 'Restore Standard Power Mode'
-                  : 'Enable Emergency Power-Saving Mode'}
+                  ? 'Turn Off Power-Saving Mode'
+                  : 'Turn On Power-Saving Mode'}
               </span>
             </span>
             {savingUsed && (
@@ -126,14 +225,14 @@ export function PowerOperationsPanel({
           </div>
           <p className="mt-2 text-xs text-[#29B6F6]">
             {powerOps.powerSavingMode
-              ? 'Restores normal science & greenhouse light levels'
-              : 'Conserves overnight batteries (+3% Power upkeep)'}
+              ? 'Turns full greenhouse & science power back on'
+              : 'Saves battery overnight (+3% Power saved)'}
           </p>
           <p className="mt-0.5 text-xs text-[#FFB547]">
             Trade-off:{' '}
             {powerOps.powerSavingMode
-              ? 'Increases overnight battery draw'
-              : 'Slows overnight greenhouse growth slightly'}
+              ? 'Uses more battery overnight'
+              : 'Plants grow a little slower overnight'}
           </p>
         </button>
 
@@ -146,21 +245,21 @@ export function PowerOperationsPanel({
           <div className="flex items-start justify-between gap-2">
             <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#EAF2FF]">
               <Wind className="w-4 h-4 text-[#E4774E] shrink-0" />
-              <span>Perform Solar-Panel Maintenance</span>
+              <span>Brush Dust Off Solar Panels</span>
             </span>
             {cleanUsed && (
               <span className="text-xs font-mono-tabular text-[#29B6F6]">Done</span>
             )}
           </div>
           <p className="mt-2 text-xs text-[#29B6F6]">
-            -25% Dust · +12% Solar Output · +8% Power
+            -25% Dust · +12% Sunlight Power · +8% Power
           </p>
           <p className="mt-0.5 text-xs text-[#FFB547]">
-            Trade-off: -4% Life Support (EVA suit O2) · -5% Crew Energy
+            Trade-off: Uses 4% air (spacewalk suit) · -5% Crew Energy
           </p>
           {blockedByStorm && (
             <p className="mt-1.5 text-xs text-[#E4774E] font-medium">
-              Blocked during Regional Storm — wait for calm skies before EVA brushing.
+              Unsafe during Regional Storm — wait for calm skies first.
             </p>
           )}
         </button>
@@ -181,7 +280,7 @@ export function PowerOperationsPanel({
         </div>
       )}
 
-      {/* Expandable Alternative Power Concepts (Educational Only) */}
+      {/* Expandable Future Mars Power Ideas */}
       <div className="border-t border-[#293A54] pt-4">
         <button
           type="button"
@@ -191,7 +290,7 @@ export function PowerOperationsPanel({
         >
           <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#EAF2FF]">
             <Atom className="w-4 h-4 text-[#29B6F6]" />
-            <span>Alternative Mars Power Concepts (Educational Only)</span>
+            <span>Other Ways Future Bases Make Power (Science Info)</span>
           </span>
           {conceptsOpen ? (
             <ChevronUp className="w-4 h-4 text-[#A8B6CC]" />
@@ -203,8 +302,7 @@ export function PowerOperationsPanel({
         {conceptsOpen && (
           <div className="mt-3 space-y-2.5">
             <p className="text-xs text-[#FFB547] leading-relaxed">
-              Educational Concepts — Outpost Zero currently relies on solar arrays and
-              batteries, not the future or specialized power technologies below:
+              Just for learning—Outpost Zero runs on solar panels and batteries, not these future systems:
             </p>
             {ALTERNATIVE_POWER_CONCEPTS.map((concept) => (
               <div

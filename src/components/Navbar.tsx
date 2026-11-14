@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { AppRoute } from '../types/mission';
+import { OutpostBrandLogo } from './OutpostLogo';
 
 interface NavbarProps {
   activeRoute: AppRoute;
@@ -42,13 +43,14 @@ export function Navbar({
   return (
     <header className="sticky top-0 z-40 w-full bg-[#080D1B]/95 backdrop-blur-sm border-b border-[#293A54]">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-[72px] flex items-center justify-between gap-8">
-        {/* Zone 1: Single-line Brand Wordmark */}
+        {/* Zone 1: Header Brand Logo */}
         <button
           type="button"
           onClick={() => handleNav('home')}
-          className="font-display text-lg sm:text-xl font-bold tracking-tight text-[#EAF2FF] hover:text-[#29B6F6] transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#29B6F6] cursor-pointer"
+          aria-label="Outpost Zero — Home"
+          className="inline-flex items-center rounded-md transition-opacity hover:opacity-90 shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#29B6F6] cursor-pointer"
         >
-          Outpost Zero
+          <OutpostBrandLogo showSubtitle={false} />
         </button>
 
         {/* Zone 2: Single-line Navigation Links (Desktop / Tablet) */}
@@ -139,7 +141,7 @@ export function Navbar({
               onClick={handleOpenGuide}
               className="w-full text-left min-h-[44px] px-3 py-2.5 rounded-lg text-sm font-medium text-[#FFB547] hover:bg-[#1E3353]/60 transition-colors whitespace-nowrap cursor-pointer"
             >
-              Medals &amp; Unlock Guide ({unlockedMedalsCount}/{totalMedalsCount})
+              Medals &amp; Guide ({unlockedMedalsCount}/{totalMedalsCount})
             </button>
             <button
               type="button"

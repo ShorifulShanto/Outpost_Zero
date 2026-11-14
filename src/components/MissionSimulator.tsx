@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
   CheckCircle2,
+  MapPin,
   Pause,
   Play,
   RotateCcw,
   Shield,
+  Shuffle,
   Sprout,
   Sun,
   Users,
 } from 'lucide-react';
 import { buildMissionReport } from '../engine/gameEngine';
+import { LANDING_SITES } from '../engine/missionData';
 import {
   DonkiRadiationContext,
   fetchDonkiCmes,
@@ -24,22 +27,36 @@ import {
   DetailedEarthReport,
   GameState,
   GreenhouseActionId,
+  LandingSiteId,
   PowerActionId,
   ShelterActionId,
+  SpaceWeatherMode,
 } from '../types/mission';
+import { ExplorerProgressState } from '../utils/explorerProgress';
 import { CommunicationDelayPanel } from './CommunicationDelayPanel';
 import { GreenhousePanel } from './GreenhousePanel';
+import { InfoHoverTip } from './InfoHoverTip';
 import { MarsEnvironmentPanel } from './MarsEnvironmentPanel';
-import { MissionReportView } from './MissionReportView';
 import { OutpostSchematic } from './OutpostSchematic';
 import { PageBackButton } from './PageBackButton';
 import { PowerOperationsPanel } from './PowerOperationsPanel';
 import { RadiationShelterPanel } from './RadiationShelterPanel';
 import { ResourceCard } from './ResourceCard';
 
+const MissionReportView = lazy(() =>
+  import('./MissionReportView').then((m) => ({ default: m.MissionReportView }))
+);
+
 interface MissionSimulatorProps {
   gameState: GameState;
+  explorerProgress?: ExplorerProgressState;
   onStartMission: () => void;
+  onConfigureMission: (config: {
+    landingSite?: LandingSiteId;
+    spaceWeatherMode?: SpaceWeatherMode;
+    liveSpaceWeatherLabel?: string;
+    customSeed?: number;
+  }) => void;
   onSelectDecision: (optionId: string) => void;
   onGreenhouseAction: (actionId: GreenhouseActionId) => void;
   onPowerAction: (actionId: PowerActionId) => void;
@@ -49,6 +66,7 @@ interface MissionSimulatorProps {
   onAdvanceNextSol: () => void;
   onTogglePause: () => void;
   onReplayMission: () => void;
+  onFullDemoReset: () => void;
   onMarkCommUsed: () => void;
   onNavigate: (route: AppRoute) => void;
   previousRoute?: AppRoute | null;
@@ -59,7 +77,9 @@ type SubsystemTab = 'greenhouse' | 'power' | 'shelter';
 
 export function MissionSimulator({
   gameState,
+  explorerProgress,
   onStartMission,
+  onConfigureMission,
   onSelectDecision,
   onGreenhouseAction,
   onPowerAction,
@@ -69,6 +89,7 @@ export function MissionSimulator({
   onAdvanceNextSol,
   onTogglePause,
   onReplayMission,
+  onFullDemoReset,
   onMarkCommUsed,
   onNavigate,
   previousRoute = null,
@@ -150,6 +171,56 @@ export function MissionSimulator({
 
   const canPause = phase === 'playing' || phase === 'outcome' || phase === 'sol-summary';
 
+  const deceasedCount = crew.members.filter((m) => m.status === 'Deceased').length;
+  const incapacitatedCount = crew.members.filter(
+    (m) => m.status === 'Incapacitated'
+  ).length;
+  const livingCrewCount = crew.members.length - deceasedCount;
+  const radiationLeakActive = Boolean(radiationShelter?.radiationLeakActive);
+  const cropsSpoiled = Boolean(greenhouse?.cropsSpoiled);
+  const frostWarning =
+    !cropsSpoiled && (greenhouse.lowPowerStreak >= 1 || resources.power < 25);
+
+  const activeAlerts: {
+    id: string;
+    label: string;
+    tone: 'critical' | 'warning';
+    targetTab?: SubsystemTab;
+  }[] = [];
+  if (radiationLeakActive) {
+    activeAlerts.push({
+      id: 'rad-leak',
+      label: `Radiation Leak Active (${(radiationShelter.cumulativeDoseMSv ?? 0.67).toFixed(2)} mSv) — Seal in Rad Shelter`,
+      tone: 'critical',
+      targetTab: 'shelter',
+    });
+  }
+  if (cropsSpoiled) {
+    activeAlerts.push({
+      id: 'crops-spoiled',
+      label: 'Greenhouse Crops Spoiled — Clear & Re-seed to restore food growth',
+      tone: 'critical',
+      targetTab: 'greenhouse',
+    });
+  } else if (frostWarning) {
+    activeAlerts.push({
+      id: 'frost-risk',
+      label: 'Frost Risk (Power < 25%) — Boost power before night or crops will freeze',
+      tone: 'warning',
+      targetTab: 'power',
+    });
+  }
+  if (deceasedCount > 0 || incapacitatedCount > 0) {
+    activeAlerts.push({
+      id: 'crew-health',
+      label:
+        deceasedCount > 0
+          ? `${deceasedCount} astronaut(s) lost${incapacitatedCount > 0 ? ` · ${incapacitatedCount} too weak to work` : ''} — stabilize base now`
+          : `${incapacitatedCount} astronaut(s) too weak to work (<25% health)`,
+      tone: 'critical',
+    });
+  }
+
   const latestDeltas =
     phase === 'outcome' && lastDecision
       ? lastDecision.appliedDeltas
@@ -174,7 +245,7 @@ export function MissionSimulator({
       </div>
       {/* Top Simulator Control Ribbon */}
       <section
-        aria-label="Mission telemetry controls"
+        aria-label="Mission action controls"
         className="rounded-xl bg-[#111C32] border border-[#293A54] px-4 py-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -186,8 +257,17 @@ export function MissionSimulator({
           </span>
           <span className="text-xs text-[#A8B6CC]">
             {missionConfig.planet} · {missionConfig.crewCount} Astronauts ·{' '}
-            {missionConfig.outpostType}
+            {LANDING_SITES.find((s) => s.id === missionConfig.landingSite)?.name ??
+              'Jezero Crater Floor'}
           </span>
+          {missionConfig.spaceWeatherMode === 'live-nasa' && (
+            <span className="text-xs font-mono-tabular text-[#FFB547]">
+              ·{' '}
+              {donkiContext.source === 'archived'
+                ? 'Saved Solar Storm Mode'
+                : 'NASA DONKI Mode'}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -227,7 +307,7 @@ export function MissionSimulator({
                   <span>Restart</span>
                 </button>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -236,7 +316,18 @@ export function MissionSimulator({
                     }}
                     className="min-h-[40px] px-3 py-1.5 rounded-lg bg-[#E4774E] text-[#080D1B] text-xs font-semibold cursor-pointer"
                   >
-                    Confirm Restart
+                    Restart Mission
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmReset(false);
+                      onFullDemoReset();
+                    }}
+                    title="Clears current mission, Explorer Medals, Quiz score, and NASA cache"
+                    className="min-h-[40px] px-3 py-1.5 rounded-lg border border-[#FFB547] bg-[#080D1B] hover:bg-[#1E3353] text-[#FFB547] text-xs font-semibold cursor-pointer"
+                  >
+                    Full Reset (Demo)
                   </button>
                   <button
                     type="button"
@@ -275,11 +366,20 @@ export function MissionSimulator({
 
       {/* Report View replaces active turn stage when finished */}
       {phase === 'report' ? (
-        <MissionReportView
-          report={buildMissionReport(gameState, donkiContext)}
-          onReplay={() => runGuardedAction(onReplayMission)}
-          onNavigate={onNavigate}
-        />
+        <Suspense
+          fallback={
+            <div className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 text-center text-sm text-[#29B6F6]">
+              Preparing Mission Report &amp; Charts...
+            </div>
+          }
+        >
+          <MissionReportView
+            report={buildMissionReport(gameState, donkiContext)}
+            explorerProgress={explorerProgress}
+            onReplay={() => runGuardedAction(onReplayMission)}
+            onNavigate={onNavigate}
+          />
+        </Suspense>
       ) : (
         <>
           {/* 3 Primary Resource Cards */}
@@ -301,6 +401,44 @@ export function MissionSimulator({
             />
           </div>
 
+          {/* Compact Active Habitat Alerts Strip (Only shown when hazards exist) */}
+          {phase !== 'briefing' && activeAlerts.length > 0 && (
+            <section
+              aria-label="Active habitat alerts"
+              className="rounded-xl bg-[#080D1B] border border-[#E4774E]/80 px-4 py-3 flex flex-wrap items-center gap-2.5"
+            >
+              <span className="inline-flex items-center gap-1.5 text-xs font-mono-tabular font-bold text-[#E4774E] shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+                <span>HABITAT ALERTS:</span>
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {activeAlerts.map((alert) =>
+                  alert.targetTab ? (
+                    <button
+                      key={alert.id}
+                      type="button"
+                      onClick={() => setActiveSubsystem(alert.targetTab!)}
+                      className={`text-left text-xs px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                        alert.tone === 'critical'
+                          ? 'bg-[#111C32] border-[#E4774E]/70 text-[#EAF2FF] hover:border-[#29B6F6]'
+                          : 'bg-[#111C32] border-[#FFB547]/70 text-[#FFB547] hover:border-[#29B6F6]'
+                      }`}
+                    >
+                      {alert.label}
+                    </button>
+                  ) : (
+                    <span
+                      key={alert.id}
+                      className="text-xs px-2.5 py-1 rounded bg-[#111C32] border border-[#E4774E]/70 text-[#EAF2FF]"
+                    >
+                      {alert.label}
+                    </span>
+                  )
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Main Simulator Stage + Side Telemetry Column */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Left/Main Mission Control Stage */}
@@ -312,33 +450,152 @@ export function MissionSimulator({
                     Pre-Mission Briefing · Jezero Sector, Mars
                   </p>
                   <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold text-[#EAF2FF]">
-                    Welcome, Commander. Keep Outpost Zero Alive for 10 Sols.
+                    Keep Outpost Zero Alive for 10 Sols.
                   </h2>
-                  <p className="mt-3 text-sm sm:text-base text-[#A8B6CC] leading-relaxed">
-                    You are guiding four astronauts inside a small research outpost on Mars.
-                    Each Martian day (called a <strong className="text-[#EAF2FF]">Sol</strong>)
-                    brings a real engineering challenge—from dust storms and solar flares to
-                    communication conjunctions, airlock faults, and greenhouse frost.
+                  <p className="mt-2 text-sm text-[#A8B6CC] leading-relaxed">
+                    Command four astronauts across 10 Martian Sols—balancing Life Support,
+                    Power, and Radiation.
                   </p>
 
-                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-4">
-                      <p className="text-xs font-semibold text-[#E4774E]">
-                        No Free Choices Rule
-                      </p>
-                      <p className="mt-1.5 text-xs text-[#A8B6CC] leading-relaxed">
-                        Every engineering option solves one problem while spending power,
-                        life support, shielding, or crew energy. Watch your percentages!
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <InfoHoverTip
+                      label="No Free Choices Rule"
+                      title="Every Action Has a Trade-Off"
+                      body="Solving one crisis always spends Power, Life Support, Radiation Shielding, or Crew Energy. Watch your resource margins!"
+                      accent="orange"
+                    />
+                    <InfoHoverTip
+                      label="3–22 min Earth Link"
+                      title="Crew Autonomy & Radio Delay"
+                      body="Radio signals take 3–22 minutes one-way (6–44 min round-trip). Follow approved safety checklists when urgent action is needed."
+                      accent="blue"
+                    />
+                  </div>
+
+                  {/* Landing Site Picker (Mars Trek Jezero Sector) */}
+                  <div className="mt-6 pt-5 border-t border-[#293A54] space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#EAF2FF]">
+                        <MapPin className="w-3.5 h-3.5 text-[#29B6F6]" />
+                        <span>1. Pick Your Mars Landing Spot</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {LANDING_SITES.map((site) => {
+                        const selected =
+                          (missionConfig.landingSite ?? 'jezero-floor') === site.id;
+                        return (
+                          <button
+                            key={site.id}
+                            type="button"
+                            onClick={() =>
+                              onConfigureMission({ landingSite: site.id })
+                            }
+                            aria-pressed={selected}
+                            className={`text-left rounded-lg border p-3.5 transition-colors cursor-pointer ${
+                              selected
+                                ? 'bg-[#1E3353] border-[#29B6F6]'
+                                : 'bg-[#080D1B] border-[#293A54] hover:border-[#29B6F6]/60'
+                            }`}
+                          >
+                            <p className="text-xs font-semibold text-[#EAF2FF]">
+                              {site.name}
+                            </p>
+                            <p className="mt-0.5 font-mono-tabular text-[11px] text-[#29B6F6]">
+                              {site.elevationLabel}
+                            </p>
+                            <p className="mt-1.5 text-[11px] text-[#FFB547] leading-relaxed">
+                              {site.tradeOff}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Space Weather Mode & Mission Code */}
+                  <div className="mt-5 grid grid-cols-1 sm:grid-cols-12 gap-3 items-stretch">
+                    <div className="sm:col-span-8 rounded-lg bg-[#080D1B] border border-[#293A54] p-3.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[#EAF2FF]">
+                          2. Solar Storm Challenge
+                        </span>
+                        <span className="font-mono-tabular text-[11px] text-[#29B6F6]">
+                          {donkiContext.source === 'archived'
+                            ? 'From Saved Data'
+                            : donkiContext.sourceLabel}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onConfigureMission({ spaceWeatherMode: 'standard' })
+                          }
+                          aria-pressed={
+                            (missionConfig.spaceWeatherMode ?? 'standard') ===
+                            'standard'
+                          }
+                          className={`min-h-[38px] px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors cursor-pointer ${
+                            (missionConfig.spaceWeatherMode ?? 'standard') ===
+                            'standard'
+                              ? 'bg-[#1E3353] border-[#29B6F6] text-[#EAF2FF]'
+                              : 'bg-[#111C32] border-[#293A54] text-[#A8B6CC]'
+                          }`}
+                        >
+                          Standard 10-Sol
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onConfigureMission({
+                              spaceWeatherMode: 'live-nasa',
+                              liveSpaceWeatherLabel: donkiContext.headline,
+                            })
+                          }
+                          aria-pressed={
+                            missionConfig.spaceWeatherMode === 'live-nasa'
+                          }
+                          className={`min-h-[38px] px-3 py-1.5 rounded-md border text-xs font-semibold transition-colors cursor-pointer ${
+                            missionConfig.spaceWeatherMode === 'live-nasa'
+                              ? 'bg-[#1E3353] border-[#FFB547] text-[#FFB547]'
+                              : 'bg-[#111C32] border-[#293A54] text-[#A8B6CC]'
+                          }`}
+                        >
+                          {donkiContext.source === 'archived'
+                            ? 'Saved Solar Storm (DONKI)'
+                            : 'Live NASA DONKI Storm'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[#A8B6CC] leading-relaxed">
+                        {missionConfig.spaceWeatherMode === 'live-nasa'
+                          ? `Injects a Solar Particle Event on Sol 2 (${donkiContext.source === 'archived' ? 'from saved solar flare record' : `live Class ${donkiContext.latestFlare?.classType ?? 'X'} flare`}).`
+                          : 'Balanced seeded 10-Sol timeline recommended for first-time commanders.'}
                       </p>
                     </div>
-                    <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-4">
-                      <p className="text-xs font-semibold text-[#29B6F6]">
-                        Crew Autonomy &amp; Earth Link
-                      </p>
-                      <p className="mt-1.5 text-xs text-[#A8B6CC] leading-relaxed">
-                        Signals take 3–22 minutes one-way (6–44 minutes round-trip). Follow
-                        approved safety checklists when urgent action is needed!
-                      </p>
+
+                    <div className="sm:col-span-4 rounded-lg bg-[#080D1B] border border-[#293A54] p-3.5 flex flex-col justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-semibold text-[#EAF2FF]">
+                          Mission Code
+                        </span>
+                        <p className="mt-1 font-mono-tabular text-base font-bold text-[#29B6F6]">
+                          OZ-{gameState.missionSeed}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onConfigureMission({
+                            customSeed: Math.floor(Math.random() * 9000) + 1000,
+                          })
+                        }
+                        className="inline-flex items-center justify-center gap-1.5 min-h-[34px] px-2.5 py-1 rounded-md border border-[#293A54] hover:border-[#29B6F6] bg-[#111C32] text-xs font-medium text-[#A8B6CC] hover:text-[#EAF2FF] cursor-pointer transition-colors"
+                      >
+                        <Shuffle className="w-3.5 h-3.5" />
+                        <span>New Code</span>
+                      </button>
                     </div>
                   </div>
 
@@ -389,55 +646,52 @@ export function MissionSimulator({
                     {activeEvent.description}
                   </p>
 
-                  {/* Expandable Mars Science Behind This Event */}
-                  <div className="mt-4">
+                  {/* Minimal Hover/Expandable Science Context */}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setScienceNoteOpen((prev) => !prev)}
                       aria-expanded={scienceNoteOpen}
-                      className="inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] text-xs font-medium text-[#29B6F6] transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1.5 min-h-[32px] px-2.5 py-1 rounded-md bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] text-xs font-medium text-[#29B6F6] transition-colors cursor-pointer"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>
-                        {scienceNoteOpen
-                          ? 'Hide Mars Science Explanation'
-                          : 'Read Mars Science Behind This Event'}
+                        {scienceNoteOpen ? 'Hide Mars Science' : 'Mars Science'}
                       </span>
                     </button>
-
-                    {scienceNoteOpen && (
-                      <div className="mt-2.5 rounded-lg bg-[#080D1B] border border-[#29B6F6]/40 p-3.5 space-y-2 text-xs">
-                        <p className="text-[#EAF2FF]/90 leading-relaxed">
-                          {activeEvent.scientificExplanation}
-                        </p>
-                        <p className="text-[#FFB547] leading-relaxed">
-                          <strong>Key Takeaway:</strong> {activeEvent.educationalTakeaway}
-                        </p>
-                      </div>
-                    )}
 
                     {(activeEvent.category === 'Radiation' ||
                       activeEvent.id === 'solar-conjunction-comms' ||
                       activeEvent.id === 'comm-equipment-failure') && (
-                      <div className="mt-3 rounded-lg bg-[#080D1B] border border-[#293A54] p-3.5 space-y-1.5 text-xs">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold text-[#29B6F6]">
-                            {donkiContext.headline}
-                          </span>
-                          <span className="font-mono-tabular text-[#FFB547]">
-                            {donkiContext.sourceLabel}
-                          </span>
-                        </div>
-                        <p className="text-[#A8B6CC] leading-relaxed">
-                          {donkiContext.scientificContext}
-                        </p>
-                        <p className="text-[#A8B6CC]/80 italic">
-                          Scientific context only — does not alter deterministic
-                          simulator percentages.
-                        </p>
-                      </div>
+                      <InfoHoverTip
+                        label={
+                          donkiContext.source === 'archived'
+                            ? 'Saved Solar Data'
+                            : `NASA DONKI${donkiContext.latestFlare ? `: Class ${donkiContext.latestFlare.classType}` : ''}`
+                        }
+                        title={donkiContext.headline}
+                        badge={
+                          donkiContext.source === 'archived'
+                            ? 'From Saved Data'
+                            : donkiContext.sourceLabel
+                        }
+                        body={donkiContext.scientificContext}
+                        note="Scientific context only — does not alter deterministic simulator percentages."
+                        accent="amber"
+                      />
                     )}
                   </div>
+
+                  {scienceNoteOpen && (
+                    <div className="mt-2.5 rounded-lg bg-[#080D1B] border border-[#29B6F6]/40 p-3.5 space-y-2 text-xs">
+                      <p className="text-[#EAF2FF]/90 leading-relaxed">
+                        {activeEvent.scientificExplanation}
+                      </p>
+                      <p className="text-[#FFB547] leading-relaxed">
+                        <strong>Key Takeaway:</strong> {activeEvent.educationalTakeaway}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mt-6 space-y-3.5">
                     <p className="text-xs font-medium text-[#A8B6CC]">
@@ -659,8 +913,12 @@ export function MissionSimulator({
                       <Sprout className="w-4 h-4 text-[#29B6F6]" />
                       <span>Greenhouse</span>
                     </span>
-                    <span className="font-mono-tabular text-[#29B6F6]">
-                      {greenhouse.cropGrowthProgress}%
+                    <span
+                      className={`font-mono-tabular ${
+                        cropsSpoiled ? 'text-[#E4774E]' : 'text-[#29B6F6]'
+                      }`}
+                    >
+                      {cropsSpoiled ? 'Spoiled' : `${greenhouse.cropGrowthProgress}%`}
                     </span>
                   </button>
 
@@ -700,9 +958,11 @@ export function MissionSimulator({
                       <span>Rad Shelter</span>
                     </span>
                     <span className="font-mono-tabular text-[#E4774E]">
-                      {radiationShelter.crewSheltered
-                        ? 'Sheltered'
-                        : `${radiationShelter.shelterReadiness}%`}
+                      {radiationLeakActive
+                        ? 'Leak!'
+                        : radiationShelter.crewSheltered
+                          ? 'Sheltered'
+                          : `${radiationShelter.shelterReadiness}%`}
                     </span>
                   </button>
                 </div>
@@ -744,36 +1004,83 @@ export function MissionSimulator({
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-[#29B6F6]" />
                     <h3 className="font-display text-sm sm:text-base font-semibold text-[#EAF2FF]">
-                      Outpost Crew ({crew.members.length} Astronauts)
+                      Outpost Crew ({livingCrewCount} / {crew.members.length} Alive)
                     </h3>
                   </div>
                   <span className="text-xs font-mono-tabular text-[#A8B6CC]">
-                    Avg Energy: {crew.overallReadiness}%
+                    Readiness: {crew.overallReadiness}%
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {crew.members.map((member) => (
-                    <div
-                      key={member.id}
-                      className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#EAF2FF] truncate">
-                          {member.name}
-                        </p>
-                        <p className="text-xs text-[#A8B6CC] truncate">
-                          {member.role}
-                        </p>
+                  {crew.members.map((member) => {
+                    const memberHealth =
+                      typeof member.health === 'number' ? member.health : 100;
+                    const isDeceased = member.status === 'Deceased';
+                    const isIncapacitated = member.status === 'Incapacitated';
+                    const healthColor =
+                      memberHealth >= 60
+                        ? 'text-[#29B6F6]'
+                        : memberHealth >= 25
+                          ? 'text-[#FFB547]'
+                          : 'text-[#E4774E]';
+                    const barColor =
+                      memberHealth >= 60
+                        ? 'bg-[#29B6F6]'
+                        : memberHealth >= 25
+                          ? 'bg-[#FFB547]'
+                          : 'bg-[#E4774E]';
+
+                    return (
+                      <div
+                        key={member.id}
+                        className={`rounded-lg bg-[#080D1B] border p-3 space-y-2 ${
+                          isDeceased || isIncapacitated
+                            ? 'border-[#E4774E]/80'
+                            : 'border-[#293A54]'
+                        } ${isDeceased ? 'opacity-75' : ''}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[#EAF2FF] truncate">
+                              {member.name}
+                            </p>
+                            <p className="text-xs text-[#A8B6CC] truncate">
+                              {member.role}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p
+                              className={`font-mono-tabular text-xs font-semibold ${
+                                isDeceased || isIncapacitated
+                                  ? 'text-[#E4774E]'
+                                  : 'text-[#29B6F6]'
+                              }`}
+                            >
+                              {member.status}
+                            </p>
+                            <p className="font-mono-tabular text-[11px] text-[#A8B6CC]">
+                              Energy {member.energy}%
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-mono-tabular">
+                            <span className="text-[#A8B6CC]">Health</span>
+                            <span className={`font-semibold ${healthColor}`}>
+                              {memberHealth}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-[#111C32] overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-300 ${barColor}`}
+                              style={{ width: `${memberHealth}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className="font-mono-tabular text-xs font-semibold text-[#29B6F6]">
-                          {member.energy}%
-                        </p>
-                        <p className="text-xs text-[#A8B6CC]">{member.status}</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <p className="mt-3 text-xs text-[#A8B6CC]">{crew.crewNote}</p>
               </section>
@@ -804,6 +1111,12 @@ export function MissionSimulator({
                 resources={resources}
                 isTransmitting={isTransmitting}
                 isPaused={isPaused}
+                radiationLeakActive={radiationLeakActive}
+                cropsSpoiled={cropsSpoiled}
+                frostWarning={resources.power < 25}
+                panelDustLevel={powerOps.dustAccumulation}
+                stormSeverity={powerOps.stormSeverity}
+                crewSheltered={radiationShelter.crewSheltered}
                 compact
                 onNavigate={onNavigate}
               />
@@ -812,11 +1125,10 @@ export function MissionSimulator({
         </>
       )}
 
-      {/* Required Educational Simulation Disclaimer */}
-      <footer className="rounded-xl bg-[#111C32]/60 border border-[#293A54] px-4 py-3.5 text-center">
-        <p className="text-xs text-[#A8B6CC] leading-relaxed">
-          These game values are simplified to help you understand mission planning. Real
-          Mars missions require much more detailed engineering calculations.
+      {/* Compact Simulation Disclaimer */}
+      <footer className="text-center py-1">
+        <p className="text-[11px] text-[#A8B6CC]/80">
+          Simplified mission planning values · Hover info badges for NASA science context.
         </p>
       </footer>
     </main>

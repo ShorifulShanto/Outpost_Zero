@@ -24,6 +24,8 @@ export interface OsdrFetchResult {
 }
 
 const OSDR_CACHE_TTL_MS = 60 * 60 * 1000;
+const OSDR_FETCH_TIMEOUT_MS = 4500;
+let inFlightOsdrPromise: Promise<OsdrFetchResult> | null = null;
 
 export const ARCHIVED_OSDR_STUDIES: OsdrStudyRecord[] = [
   {
@@ -120,10 +122,18 @@ export async function fetchOsdrStudyCatalog(
     }
   }
 
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 7000);
+  if (!options.forceRefresh && inFlightOsdrPromise) {
+    return inFlightOsdrPromise;
+  }
 
-  try {
+  const runFetch = async (): Promise<OsdrFetchResult> => {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      OSDR_FETCH_TIMEOUT_MS
+    );
+
+    try {
     const domains: OsdrHealthDomain[] = ['bone', 'muscle', 'immune', 'sleep'];
     const responses = await Promise.all(
       domains.map(async (domain) => {
@@ -162,7 +172,7 @@ export async function fetchOsdrStudyCatalog(
         source: 'archived',
         studies: ARCHIVED_OSDR_STUDIES,
         statusMessage:
-          'NASA OSDR live search returned no matching records or is unavailable. Showing verified archived OSDR study metadata.',
+          'From saved data (NASA OSDR live search unavailable).',
         fetchedAtIso: new Date().toISOString(),
       };
     }
@@ -212,10 +222,20 @@ export async function fetchOsdrStudyCatalog(
       source: 'archived',
       studies: ARCHIVED_OSDR_STUDIES,
       statusMessage:
-        'NASA live OSDR metadata is temporarily unavailable. Showing verified archived OSDR study records.',
+        'From saved data (NASA live OSDR metadata unavailable).',
       fetchedAtIso: new Date().toISOString(),
     };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  };
+
+  if (options.forceRefresh) {
+    return runFetch();
   }
+  const pending = runFetch().finally(() => {
+    inFlightOsdrPromise = null;
+  });
+  inFlightOsdrPromise = pending;
+  return pending;
 }

@@ -1,4 +1,4 @@
-import { CrewMember, MissionEvent, ResourceKey } from '../types/mission';
+import { CrewMember, LandingSiteId, MissionEvent, ResourceKey } from '../types/mission';
 
 export const MISSION_CONFIG = {
   planet: 'Mars' as const,
@@ -7,6 +7,70 @@ export const MISSION_CONFIG = {
   crewCount: 4,
   outpostType: 'Small Research Outpost',
 };
+
+export interface LandingSiteProfile {
+  id: LandingSiteId;
+  name: string;
+  elevationLabel: string;
+  summary: string;
+  tradeOff: string;
+  startingDeltas: {
+    lifeSupport: number;
+    power: number;
+    radiationProtection: number;
+    greenhouseWater: number;
+    dustAccumulation: number;
+    commDelayOffsetMin: number;
+  };
+}
+
+export const LANDING_SITES: LandingSiteProfile[] = [
+  {
+    id: 'jezero-floor',
+    name: 'Jezero Crater Floor',
+    elevationLabel: '-2,700 m · Flat Basin',
+    summary: 'Level basaltic plain surveyed by Perseverance with predictable rover routes.',
+    tradeOff: 'Balanced nominal starting systems (78% Life / 76% Power / 80% Rad).',
+    startingDeltas: {
+      lifeSupport: 0,
+      power: 0,
+      radiationProtection: 0,
+      greenhouseWater: 0,
+      dustAccumulation: 0,
+      commDelayOffsetMin: 0,
+    },
+  },
+  {
+    id: 'neretva-delta',
+    name: 'Neretva Vallis Delta',
+    elevationLabel: '-2,450 m · Clay Sediments',
+    summary: 'Ancient river delta rich in hydrated minerals useful for water recovery.',
+    tradeOff: '+4% Life Support & +6% Greenhouse Water, but +4% Dust & -4% Power.',
+    startingDeltas: {
+      lifeSupport: 4,
+      power: -4,
+      radiationProtection: 0,
+      greenhouseWater: 6,
+      dustAccumulation: 4,
+      commDelayOffsetMin: 0,
+    },
+  },
+  {
+    id: 'crater-rim',
+    name: 'Jezero Rim Ridge',
+    elevationLabel: '-1,950 m · Elevated Ridge',
+    summary: 'Higher ground with unobstructed sunlight and cleaner radio relay horizon.',
+    tradeOff: '+6% Power & -2 min Earth delay, but -4% Radiation & -2% Life Support.',
+    startingDeltas: {
+      lifeSupport: -2,
+      power: 6,
+      radiationProtection: -4,
+      greenhouseWater: -2,
+      dustAccumulation: -2,
+      commDelayOffsetMin: -2,
+    },
+  },
+];
 
 export const MARS_ENVIRONMENT_FACTS = {
   atmosphere: 'Approximately 95% carbon dioxide (CO2), with trace nitrogen and argon.',
@@ -48,6 +112,7 @@ export const INITIAL_CREW: CrewMember[] = [
     name: 'Maya Chen',
     role: 'Mission Commander',
     specialty: 'Flight Systems & Safety',
+    health: 100,
     energy: 92,
     status: 'Active',
   },
@@ -56,6 +121,7 @@ export const INITIAL_CREW: CrewMember[] = [
     name: 'Mateo Silva',
     role: 'Botanist & Life Support',
     specialty: 'Hydroponics & Oxygen',
+    health: 100,
     energy: 90,
     status: 'Active',
   },
@@ -64,6 +130,7 @@ export const INITIAL_CREW: CrewMember[] = [
     name: 'Priya Nair',
     role: 'Power & Habitat Engineer',
     specialty: 'Solar Arrays & Shielding',
+    health: 100,
     energy: 91,
     status: 'Active',
   },
@@ -72,6 +139,7 @@ export const INITIAL_CREW: CrewMember[] = [
     name: 'Leo Vance',
     role: 'Medical & Comms Officer',
     specialty: 'Crew Health & Deep Space Link',
+    health: 100,
     energy: 89,
     status: 'Active',
   },
@@ -264,7 +332,7 @@ export const MISSION_EVENTS: MissionEvent[] = [
     earthAdvice: {
       headline: 'Deep Space Antenna Diagnostics',
       guidance:
-        'Without orbital weather telemetry, you lose early warnings for Solar Particle Events. Re-aiming the dish physically saves battery power if Life Support oxygen is healthy.',
+        'Without space-weather sensor updates, you lose early warnings for Solar Particle Events. Re-aiming the dish physically saves battery power if Life Support oxygen is healthy.',
       scienceFact:
         'At closest approach radio signals take ~3 minutes one-way; at farthest orbital separation they take ~22 minutes one-way.',
     },
@@ -443,7 +511,7 @@ export const MISSION_EVENTS: MissionEvent[] = [
       guidance:
         'Check your battery reserves first: if Power is above 50%, warming the hydroponic loop preserves future harvests; if Power is low, isolate the bay and rely on stored rations.',
       scienceFact:
-        'Untreated Martian regolith contains toxic perchlorate salts, so Mars greenhouses use sealed hydroponic trays rather than raw outdoor dirt.',
+        'Untreated Martian dirt contains toxic salty chemicals (perchlorates), so Mars greenhouses grow food in sealed water trays rather than outdoor dirt.',
     },
   },
   {
@@ -1177,7 +1245,7 @@ export const MISSION_EVENTS: MissionEvent[] = [
         actionSummary:
           'Use pre-programmed wheel wiggle sequences from indoors to free the rover and park it safely.',
         tradeOffHint:
-          'Avoids EVA Radiation exposure and saves suit Oxygen, at a moderate Power telemetry cost.',
+          'Avoids outdoor Radiation exposure and saves suit Oxygen, using moderate Power for remote controls.',
         approach: 'approved-checklist',
         deltas: {
           lifeSupport: +2,

@@ -1,5 +1,6 @@
 import {
   CommunicationSystemState,
+  CrewMember,
   CropGrowthStage,
   DecisionRecord,
   DetailedEarthReport,
@@ -7,6 +8,7 @@ import {
   GameState,
   GreenhouseActionId,
   GreenhouseState,
+  LandingSiteId,
   MissionEvent,
   MissionReport,
   PowerActionId,
@@ -15,12 +17,22 @@ import {
   ResourceState,
   ResourceStatus,
   ShelterActionId,
+  SpaceWeatherMode,
 } from '../types/mission';
 import { DonkiRadiationContext } from '../services/nasaDonkiService';
 import { evaluateMissionAdvisor } from './missionAdvisor';
-import { INITIAL_CREW, MISSION_CONFIG, MISSION_EVENTS } from './missionData';
+import {
+  INITIAL_CREW,
+  LANDING_SITES,
+  MISSION_CONFIG,
+  MISSION_EVENTS,
+} from './missionData';
 
-export function getCropGrowthStage(progress: number): CropGrowthStage {
+export function getCropGrowthStage(
+  progress: number,
+  cropsSpoiled = false
+): CropGrowthStage {
+  if (cropsSpoiled) return 'Spoiled';
   if (progress >= 100) return 'Harvest Ready';
   if (progress >= 65) return 'Flowering';
   if (progress >= 30) return 'Vegetative';
@@ -36,6 +48,8 @@ export function createInitialGreenhouseState(): GreenhouseState {
     powerConsumption: 'Standard',
     irrigationStatus: 'Flowing',
     harvestReadiness: false,
+    lowPowerStreak: 0,
+    cropsSpoiled: false,
     actionsUsedThisSol: [],
     lastActionFeedback: null,
   };
@@ -69,6 +83,8 @@ export function createInitialRadiationShelterState(): RadiationShelterState {
       'Packed Martian Regolith',
     ],
     radiationAlert: 'Background GCR',
+    radiationLeakActive: false,
+    cumulativeDoseMSv: 0.67,
     actionsUsedThisSol: [],
     lastActionFeedback: null,
   };
@@ -124,11 +140,27 @@ export function getStatusVisuals(status: ResourceStatus): {
   }
 }
 
+function getLandingSiteProfile(id?: LandingSiteId) {
+  return LANDING_SITES.find((s) => s.id === id) ?? LANDING_SITES[0];
+}
+
 function selectEventForSol(
   sol: number,
   usedEventIds: string[],
-  seed: number
+  seed: number,
+  spaceWeatherMode?: SpaceWeatherMode
 ): MissionEvent {
+  if (
+    spaceWeatherMode === 'live-nasa' &&
+    sol === 2 &&
+    !usedEventIds.includes('solar-storm-warning')
+  ) {
+    const speEvent = MISSION_EVENTS.find((ev) => ev.id === 'solar-storm-warning');
+    if (speEvent) {
+      return speEvent;
+    }
+  }
+
   const unused = MISSION_EVENTS.filter((ev) => !usedEventIds.includes(ev.id));
   const windowMatches = unused.filter(
     (ev) => sol >= ev.solWindow[0] && sol <= ev.solWindow[1]
@@ -155,9 +187,14 @@ function applyEventEnvironmentEffects(
   const isHaze = condition === 'Dust Haze';
   const isSpe = condition === 'Solar Particle Advisory';
   const isConjunction = Boolean(event.conjunctionRestricted);
+  const site = getLandingSiteProfile(state.missionConfig.landingSite);
 
   // One-way delay varies realistically across the 3-22 min range as planets orbit
-  const oneWayDelayMinutes = Math.min(22, Math.max(3, 6 + ((sol * 2 + (state.missionSeed % 5)) % 16)));
+  const baseDelay = 6 + ((sol * 2 + (state.missionSeed % 5)) % 16);
+  const oneWayDelayMinutes = Math.min(
+    22,
+    Math.max(3, baseDelay + site.startingDeltas.commDelayOffsetMin)
+  );
 
   return {
     environment: {
@@ -193,45 +230,86 @@ function applyEventEnvironmentEffects(
   };
 }
 
-export function createInitialGameState(customSeed?: number): GameState {
+export interface MissionInitOptions {
+  landingSite?: LandingSiteId;
+  spaceWeatherMode?: SpaceWeatherMode;
+  liveSpaceWeatherLabel?: string;
+}
+
+export function createInitialGameState(
+  customSeed?: number,
+  options?: MissionInitOptions
+): GameState {
   const missionSeed =
-    typeof customSeed === 'number' && Number.isFinite(customSeed)
+    typeof customSeed === 'number' && Number.isFinite(customSeed) && customSeed > 0
       ? Math.abs(Math.floor(customSeed))
       : Math.floor(Math.random() * 10000) + 1;
 
+  const site = getLandingSiteProfile(options?.landingSite);
+  const spaceWeatherMode: SpaceWeatherMode = options?.spaceWeatherMode ?? 'standard';
+
+  const startLife = clampResource(78 + site.startingDeltas.lifeSupport);
+  const startPower = clampResource(76 + site.startingDeltas.power);
+  const startRad = clampResource(80 + site.startingDeltas.radiationProtection);
+
   const initialResources: ResourceState = {
-    lifeSupport: 78,
-    power: 76,
-    radiationProtection: 80,
-    oxygenAvailability: 82,
+    lifeSupport: startLife,
+    power: startPower,
+    radiationProtection: startRad,
+    oxygenAvailability: clampResource(82 + site.startingDeltas.lifeSupport),
     foodReserves: 74,
     greenhouseStatus: 'Thriving',
-    solarGeneration: 78,
-    batteryReserve: 74,
+    solarGeneration: clampResource(78 + site.startingDeltas.power),
+    batteryReserve: clampResource(74 + site.startingDeltas.power),
     energyConsumption: 'Balanced',
-    shieldingCondition: 82,
+    shieldingCondition: clampResource(82 + site.startingDeltas.radiationProtection),
     crewExposureRisk: 'Low',
     solarWeatherAlert: 'Clear',
     shelterAvailable: true,
   };
 
+  const baseGreenhouse = createInitialGreenhouseState();
+  const basePowerOps = createInitialPowerOpsState();
+  const baseComm = createInitialCommSystemState();
+
   return {
-    missionConfig: { ...MISSION_CONFIG },
+    missionConfig: {
+      ...MISSION_CONFIG,
+      landingSite: site.id,
+      spaceWeatherMode,
+      liveSpaceWeatherLabel: options?.liveSpaceWeatherLabel,
+    },
     missionSeed,
     phase: 'briefing',
     currentSol: 1,
     isPaused: false,
     isProcessingAction: false,
     resources: initialResources,
-    greenhouse: createInitialGreenhouseState(),
+    greenhouse: {
+      ...baseGreenhouse,
+      waterAvailability: clampResource(
+        baseGreenhouse.waterAvailability + site.startingDeltas.greenhouseWater
+      ),
+    },
     environment: createInitialEnvironmentState(),
-    powerOps: createInitialPowerOpsState(),
+    powerOps: {
+      ...basePowerOps,
+      dustAccumulation: clampResource(
+        basePowerOps.dustAccumulation + site.startingDeltas.dustAccumulation
+      ),
+    },
     radiationShelter: createInitialRadiationShelterState(),
-    commSystem: createInitialCommSystemState(),
+    commSystem: {
+      ...baseComm,
+      oneWayDelayMinutes: Math.min(
+        22,
+        Math.max(3, baseComm.oneWayDelayMinutes + site.startingDeltas.commDelayOffsetMin)
+      ),
+    },
     crew: {
       members: INITIAL_CREW.map((m) => ({ ...m })),
       overallReadiness: 91,
-      crewNote: 'All 4 astronauts are healthy and ready for Sol 1 operations.',
+      crewNote: `All 4 astronauts are healthy and ready for Sol 1 operations at ${site.name}.`,
     },
     activeEvent: null,
     lastDecision: null,
@@ -252,9 +330,28 @@ export function createInitialGameState(customSeed?: number): GameState {
   };
 }
 
+export function configureBriefingMission(
+  state: GameState,
+  config: MissionInitOptions & { customSeed?: number }
+): GameState {
+  if (state.phase !== 'briefing') return state;
+  return createInitialGameState(config.customSeed ?? state.missionSeed, {
+    landingSite: config.landingSite ?? state.missionConfig.landingSite,
+    spaceWeatherMode:
+      config.spaceWeatherMode ?? state.missionConfig.spaceWeatherMode,
+    liveSpaceWeatherLabel:
+      config.liveSpaceWeatherLabel ?? state.missionConfig.liveSpaceWeatherLabel,
+  });
+}
+
 export function startMission(state: GameState): GameState {
   if (state.phase !== 'briefing') return state;
-  const firstEvent = selectEventForSol(1, [], state.missionSeed);
+  const firstEvent = selectEventForSol(
+    1,
+    [],
+    state.missionSeed,
+    state.missionConfig.spaceWeatherMode
+  );
   const envEffects = applyEventEnvironmentEffects(state, firstEvent, 1);
 
   return {
@@ -316,7 +413,97 @@ export function sendDetailedEarthReport(
   };
 }
 
-function checkFailureReason(resources: ResourceState): string | null {
+function updateCrewMembers(
+  members: CrewMember[],
+  options: {
+    healthDelta?: number;
+    energyDelta?: number;
+    preferredStatus?: CrewMember['status'];
+  }
+): CrewMember[] {
+  const healthDelta = options.healthDelta ?? 0;
+  const energyDelta = options.energyDelta ?? 0;
+
+  return members.map((member) => {
+    const baseHealth = typeof member.health === 'number' ? member.health : 100;
+    if (member.status === 'Deceased' || baseHealth <= 0) {
+      return {
+        ...member,
+        health: 0,
+        energy: 0,
+        status: 'Deceased' as const,
+      };
+    }
+
+    const nextHealth = clampResource(baseHealth + healthDelta);
+    if (nextHealth <= 0) {
+      return {
+        ...member,
+        health: 0,
+        energy: 0,
+        status: 'Deceased' as const,
+      };
+    }
+
+    const nextEnergy = clampResource(member.energy + energyDelta);
+    const nextStatus: CrewMember['status'] =
+      nextHealth < 25
+        ? 'Incapacitated'
+        : options.preferredStatus ??
+          (member.status === 'Incapacitated' ? 'Active' : member.status);
+
+    return {
+      ...member,
+      health: nextHealth,
+      energy: nextEnergy,
+      status: nextStatus,
+    };
+  });
+}
+
+function computeCrewReadiness(members: CrewMember[]): number {
+  const living = members.filter((m) => m.status !== 'Deceased');
+  if (living.length === 0) return 0;
+  const avgEnergy =
+    living.reduce((sum, m) => sum + m.energy, 0) / living.length;
+  const incapacitatedCount = living.filter(
+    (m) => m.status === 'Incapacitated'
+  ).length;
+  const capacityFactor = living.length / members.length;
+  return clampResource(avgEnergy * capacityFactor - incapacitatedCount * 6);
+}
+
+function buildCrewNote(members: CrewMember[], avgEnergy: number): string {
+  const deceased = members.filter((m) => m.status === 'Deceased').length;
+  const incapacitated = members.filter((m) => m.status === 'Incapacitated').length;
+  if (deceased > 0) {
+    return `${deceased} astronaut(s) lost to Martian hazards. Remaining crew (${members.length - deceased}/${members.length}) are carrying heavier emergency shifts.`;
+  }
+  if (incapacitated > 0) {
+    return `${incapacitated} astronaut(s) incapacitated from low health. Stabilize Life Support, Radiation, and Power immediately.`;
+  }
+  if (avgEnergy < 50) {
+    return 'The crew is getting tired from heavy engineering shifts and needs rest.';
+  }
+  return 'Crew completed the repair and is watching station sensors.';
+}
+
+function checkFailureReason(
+  resources: ResourceState,
+  members?: CrewMember[]
+): string | null {
+  if (members) {
+    const deceasedCount = members.filter((m) => m.status === 'Deceased').length;
+    const operableCount = members.filter(
+      (m) => m.status !== 'Deceased' && m.status !== 'Incapacitated'
+    ).length;
+    if (deceasedCount >= 2) {
+      return `Critical crew casualty: ${deceasedCount} astronauts were lost due to severe Mars hazards, forcing an immediate mission abort.`;
+    }
+    if (operableCount === 0) {
+      return 'All crew members are incapacitated or lost, leaving Outpost Zero unable to operate.';
+    }
+  }
   if (resources.lifeSupport <= 0) {
     return 'Life Support oxygen and food reserves dropped to 0%, requiring an emergency evacuation return.';
   }
@@ -376,15 +563,32 @@ export function applyDecision(state: GameState, optionId: string): GameState {
     shelterAvailable: chosenOption.shelterEffect ?? prev.shelterAvailable,
   };
 
-  const updatedMembers = state.crew.members.map((member) => ({
-    ...member,
-    energy: clampResource(member.energy + chosenOption.crewEnergyDelta),
-    status: chosenOption.crewStatusEffect ?? member.status,
-  }));
+  const prevShelter =
+    state.radiationShelter ?? createInitialRadiationShelterState();
+  const nextSheltered =
+    chosenOption.crewStatusEffect === 'Sheltered'
+      ? true
+      : prevShelter.crewSheltered;
 
-  const avgEnergy = Math.round(
-    updatedMembers.reduce((sum, m) => sum + m.energy, 0) / updatedMembers.length
-  );
+  // Calculate immediate crew health impact from reckless/delayed choices or critical drops
+  let immediateHealthDelta = 0;
+  if (chosenOption.approach === 'wait-for-earth') {
+    immediateHealthDelta -=
+      state.activeEvent.severity === 'Emergency' ? 10 : 5;
+  }
+  if (nextLifeSupport < 30) immediateHealthDelta -= 8;
+  if (nextRadiation < 35) immediateHealthDelta -= 8;
+  if (nextResources.solarWeatherAlert === 'Storm Watch' && !nextSheltered) {
+    immediateHealthDelta -= 8;
+  }
+
+  const updatedMembers = updateCrewMembers(state.crew.members, {
+    healthDelta: immediateHealthDelta,
+    energyDelta: chosenOption.crewEnergyDelta,
+    preferredStatus: chosenOption.crewStatusEffect,
+  });
+
+  const avgEnergy = computeCrewReadiness(updatedMembers);
 
   const record: DecisionRecord = {
     sol: state.currentSol,
@@ -436,18 +640,21 @@ export function applyDecision(state: GameState, optionId: string): GameState {
           : state.powerOps.powerSavingMode,
   };
 
+  const leakTriggeredByDecision =
+    Boolean(prevShelter.radiationLeakActive) ||
+    nextRadiation < 35 ||
+    (nextResources.solarWeatherAlert === 'Storm Watch' && !nextSheltered);
+
   const nextShelter: RadiationShelterState = {
-    ...state.radiationShelter,
+    ...prevShelter,
     shelterReadiness: clampResource(
-      state.radiationShelter.shelterReadiness + (d.shelterReadiness ?? 0)
+      prevShelter.shelterReadiness + (d.shelterReadiness ?? 0)
     ),
-    crewSheltered:
-      chosenOption.crewStatusEffect === 'Sheltered'
-        ? true
-        : state.radiationShelter.crewSheltered,
+    crewSheltered: nextSheltered,
+    radiationLeakActive: leakTriggeredByDecision,
   };
 
-  const failureReason = checkFailureReason(nextResources);
+  const failureReason = checkFailureReason(nextResources, updatedMembers);
 
   return {
     ...state,
@@ -459,10 +666,7 @@ export function applyDecision(state: GameState, optionId: string): GameState {
     crew: {
       members: updatedMembers,
       overallReadiness: avgEnergy,
-      crewNote:
-        avgEnergy < 50
-          ? 'The crew is getting tired from heavy engineering shifts and needs rest.'
-          : 'Crew completed the engineering response and is monitoring telemetry.',
+      crewNote: buildCrewNote(updatedMembers, avgEnergy),
     },
     lastDecision: record,
     decisionHistory: [...state.decisionHistory, record],
@@ -489,10 +693,19 @@ export function proceedToSolSummary(state: GameState): GameState {
   }
 
   const prev = state.resources;
+  const prevGh = state.greenhouse ?? createInitialGreenhouseState();
+  const prevShelter =
+    state.radiationShelter ?? createInitialRadiationShelterState();
   const isStorm = state.powerOps.stormSeverity === 'Regional Storm';
   const powerSaving = state.powerOps.powerSavingMode;
 
-  const lifeSupportUpkeep = prev.greenhouseStatus === 'Thriving' ? -2 : -4;
+  const incapacitatedOrLost = state.crew.members.filter(
+    (m) => m.status === 'Incapacitated' || m.status === 'Deceased'
+  ).length;
+  const lifeSupportUpkeep =
+    (prev.greenhouseStatus === 'Thriving' && !prevGh.cropsSpoiled ? -2 : -4) -
+    (incapacitatedOrLost > 0 ? 1 : 0);
+
   // Power-saving mode saves battery energy overnight; storm reduces daytime charging partially
   const powerUpkeep = powerSaving
     ? 3
@@ -503,11 +716,33 @@ export function proceedToSolSummary(state: GameState): GameState {
         : prev.energyConsumption === 'Low'
           ? 2
           : -1;
-  const radiationUpkeep = prev.solarWeatherAlert === 'Storm Watch' ? -3 : -1;
+
+  const unshieldedSpe =
+    prev.solarWeatherAlert === 'Storm Watch' && !prevShelter.crewSheltered;
+  const leakActive =
+    Boolean(prevShelter.radiationLeakActive) ||
+    prev.radiationProtection < 35 ||
+    unshieldedSpe;
+
+  const radiationUpkeep =
+    (prev.solarWeatherAlert === 'Storm Watch' ? -3 : -1) -
+    (leakActive ? 4 : 0);
 
   const nextLifeSupport = clampResource(prev.lifeSupport + lifeSupportUpkeep);
   const nextPower = clampResource(prev.power + powerUpkeep);
   const nextRadiation = clampResource(prev.radiationProtection + radiationUpkeep);
+
+  const nextLeakActive = leakActive || nextRadiation < 35;
+  const dailyDose = unshieldedSpe
+    ? 5.5
+    : nextLeakActive
+      ? 2.4
+      : prevShelter.crewSheltered
+        ? 0.25
+        : 0.67;
+  const nextCumulativeDose = Number(
+    ((prevShelter.cumulativeDoseMSv ?? 0.67) + dailyDose).toFixed(2)
+  );
 
   // Realistic dust buildup: small daily drift (~2% scaled for 10-Sol gameplay, referencing ~0.2%/Sol benchmark)
   const dustGain = isStorm ? 8 : 2;
@@ -517,76 +752,143 @@ export function proceedToSolSummary(state: GameState): GameState {
     clampResource(prev.solarGeneration - (isStorm ? 4 : 1))
   );
 
+  const nextWater = clampResource(prevGh.waterAvailability - 4);
+  const nextLowPowerStreak = nextPower < 25 ? (prevGh.lowPowerStreak ?? 0) + 1 : 0;
+  const newlySpoiled =
+    !prevGh.cropsSpoiled && (nextLowPowerStreak >= 2 || nextWater < 15);
+  const nextCropsSpoiled = Boolean(prevGh.cropsSpoiled) || newlySpoiled;
+
+  let nextGhHealth = clampResource(
+    prevGh.health + (prevGh.irrigationStatus === 'Clogged' || nextWater < 25 ? -6 : 0)
+  );
+  if (newlySpoiled) {
+    nextGhHealth = clampResource(nextGhHealth - 16);
+  }
+
+  const baseGrowth =
+    nextCropsSpoiled
+      ? 0
+      : prevGh.irrigationStatus === 'Clogged' || nextWater < 25
+        ? 4
+        : nextGhHealth >= 70 && prevGh.powerConsumption === 'Boosted'
+          ? 22
+          : nextGhHealth >= 60
+            ? 16
+            : 8;
+  const growthGain = nextCropsSpoiled
+    ? 0
+    : powerSaving
+      ? Math.max(4, baseGrowth - 4)
+      : baseGrowth;
+  const nextGrowth = nextCropsSpoiled
+    ? 0
+    : clampResource(prevGh.cropGrowthProgress + growthGain);
+
+  const nextIrrigation: GreenhouseState['irrigationStatus'] =
+    newlySpoiled || nextWater < 25
+      ? 'Clogged'
+      : nextWater < 45 && prevGh.irrigationStatus === 'Flowing'
+        ? 'Low Pressure'
+        : prevGh.irrigationStatus;
+
+  const syncedGreenhouseStatus: ResourceState['greenhouseStatus'] = nextCropsSpoiled
+    ? 'Damaged'
+    : nextGhHealth >= 70
+      ? 'Thriving'
+      : nextGhHealth >= 40
+        ? 'Strained'
+        : 'Damaged';
+
+  const foodDelta = newlySpoiled
+    ? -6
+    : nextCropsSpoiled
+      ? -3
+      : prev.greenhouseStatus === 'Thriving'
+        ? 1
+        : -3;
+
   const nextResources: ResourceState = {
     ...prev,
     lifeSupport: nextLifeSupport,
     power: nextPower,
     radiationProtection: nextRadiation,
     oxygenAvailability: clampResource(prev.oxygenAvailability + lifeSupportUpkeep),
-    foodReserves: clampResource(
-      prev.foodReserves + (prev.greenhouseStatus === 'Thriving' ? 1 : -3)
-    ),
+    foodReserves: clampResource(prev.foodReserves + foodDelta),
+    greenhouseStatus: syncedGreenhouseStatus,
     solarGeneration: nextSolarGen,
     batteryReserve: clampResource(prev.batteryReserve + powerUpkeep),
     shieldingCondition: clampResource(prev.shieldingCondition + radiationUpkeep),
-    crewExposureRisk:
-      nextRadiation >= 60 ? 'Low' : nextRadiation >= 35 ? 'Moderate' : 'Elevated',
+    crewExposureRisk: nextLeakActive
+      ? 'Elevated'
+      : nextRadiation >= 60
+        ? 'Low'
+        : nextRadiation >= 35
+          ? 'Moderate'
+          : 'Elevated',
     solarWeatherAlert: prev.solarWeatherAlert === 'Storm Watch' ? 'Advisory' : 'Clear',
   };
 
-  const restedMembers = state.crew.members.map((m) => ({
-    ...m,
-    energy: clampResource(m.energy + 5),
-    status: state.radiationShelter.crewSheltered
-      ? ('Sheltered' as const)
-      : ('Active' as const),
-  }));
+  // Overnight Crew Health Effects
+  let overnightHealthDelta = 0;
+  if (nextLifeSupport < 20) overnightHealthDelta -= 16;
+  else if (nextLifeSupport < 35) overnightHealthDelta -= 10;
 
-  const avgEnergy = Math.round(
-    restedMembers.reduce((sum, m) => sum + m.energy, 0) / restedMembers.length
-  );
+  if (nextResources.foodReserves < 20) overnightHealthDelta -= 6;
+  if (unshieldedSpe) overnightHealthDelta -= 15;
+  else if (nextLeakActive) overnightHealthDelta -= 10;
 
-  const failureAfterUpkeep = checkFailureReason(nextResources);
+  if (nextPower < 20) overnightHealthDelta -= 8;
+
+  if (
+    overnightHealthDelta === 0 &&
+    nextLifeSupport >= 65 &&
+    nextRadiation >= 55 &&
+    nextPower >= 45 &&
+    nextResources.foodReserves >= 35
+  ) {
+    overnightHealthDelta = 5;
+  }
+
+  const restedMembers = updateCrewMembers(state.crew.members, {
+    healthDelta: overnightHealthDelta,
+    energyDelta: 5,
+    preferredStatus: prevShelter.crewSheltered ? 'Sheltered' : 'Active',
+  });
+
+  const avgEnergy = computeCrewReadiness(restedMembers);
+  const failureAfterUpkeep = checkFailureReason(nextResources, restedMembers);
 
   const criticalWarnings: string[] = [];
   if (nextLifeSupport < 30 && nextLifeSupport > 0) criticalWarnings.push('Life Support is critical');
   if (nextPower < 30 && nextPower > 0) criticalWarnings.push('Power reserves are critical');
   if (nextRadiation < 30 && nextRadiation > 0) criticalWarnings.push('Radiation shielding is critical');
-
-  const prevGh = state.greenhouse ?? createInitialGreenhouseState();
-  const nextWater = clampResource(prevGh.waterAvailability - 4);
-  const nextGhHealth = clampResource(
-    prevGh.health + (prevGh.irrigationStatus === 'Clogged' || nextWater < 25 ? -6 : 0)
-  );
-  const baseGrowth =
-    prevGh.irrigationStatus === 'Clogged' || nextWater < 25
-      ? 4
-      : nextGhHealth >= 70 && prevGh.powerConsumption === 'Boosted'
-        ? 22
-        : nextGhHealth >= 60
-          ? 16
-          : 8;
-  const growthGain = powerSaving ? Math.max(4, baseGrowth - 4) : baseGrowth;
-  const nextGrowth = clampResource(prevGh.cropGrowthProgress + growthGain);
-  const nextIrrigation: GreenhouseState['irrigationStatus'] =
-    nextWater < 25
-      ? 'Clogged'
-      : nextWater < 45 && prevGh.irrigationStatus === 'Flowing'
-        ? 'Low Pressure'
-        : prevGh.irrigationStatus;
-
-  const syncedGreenhouseStatus: ResourceState['greenhouseStatus'] =
-    nextGhHealth >= 70 ? 'Thriving' : nextGhHealth >= 40 ? 'Strained' : 'Damaged';
+  if (nextLeakActive) criticalWarnings.push('Radiation leak active inside habitat');
+  if (newlySpoiled) {
+    criticalWarnings.push('Greenhouse crops spoiled from low power or frozen pipes');
+  } else if (nextLowPowerStreak === 1) {
+    criticalWarnings.push(
+      'Frost warning: Power below 25% — another low-power Sol will spoil Greenhouse crops'
+    );
+  }
+  const newCasualties = restedMembers.filter((m) => m.status === 'Deceased').length;
+  const injuredCrew = restedMembers.filter((m) => m.status === 'Incapacitated').length;
+  if (newCasualties > 0) {
+    criticalWarnings.push(`${newCasualties} astronaut(s) lost`);
+  } else if (injuredCrew > 0) {
+    criticalWarnings.push(`${injuredCrew} astronaut(s) incapacitated`);
+  }
 
   const nextGreenhouse: GreenhouseState = {
     ...prevGh,
     health: nextGhHealth,
     waterAvailability: nextWater,
     cropGrowthProgress: nextGrowth,
-    cropGrowthStage: getCropGrowthStage(nextGrowth),
-    harvestReadiness: nextGrowth >= 100,
+    cropGrowthStage: getCropGrowthStage(nextGrowth, nextCropsSpoiled),
+    harvestReadiness: !nextCropsSpoiled && nextGrowth >= 100,
     irrigationStatus: nextIrrigation,
     powerConsumption: powerSaving ? 'Low' : 'Standard',
+    lowPowerStreak: nextLowPowerStreak,
+    cropsSpoiled: nextCropsSpoiled,
   };
 
   const solPoint = {
@@ -600,19 +902,26 @@ export function proceedToSolSummary(state: GameState): GameState {
   return {
     ...state,
     phase: 'sol-summary',
-    resources: {
-      ...nextResources,
-      greenhouseStatus: syncedGreenhouseStatus,
-    },
+    resources: nextResources,
     greenhouse: nextGreenhouse,
     powerOps: {
       ...state.powerOps,
       dustAccumulation: nextDust,
     },
+    radiationShelter: {
+      ...prevShelter,
+      radiationLeakActive: nextLeakActive,
+      cumulativeDoseMSv: nextCumulativeDose,
+    },
     crew: {
       members: restedMembers,
       overallReadiness: avgEnergy,
-      crewNote: 'Overnight sleep cycle restored +5% crew energy for the next Martian morning.',
+      crewNote:
+        overnightHealthDelta < 0
+          ? 'Hazardous overnight conditions hurt crew health. Stabilize Life Support, Power, and Shielding.'
+          : overnightHealthDelta > 0
+            ? 'Healthy habitat conditions restored +5% crew health and +5% energy overnight.'
+            : 'Overnight sleep cycle restored +5% crew energy for the next Martian morning.',
     },
     history: [...state.history, solPoint],
     lastSolSummary: {
@@ -622,8 +931,11 @@ export function proceedToSolSummary(state: GameState): GameState {
         power: nextPower - prev.power,
         radiationProtection: nextRadiation - prev.radiationProtection,
       },
-      summaryNote:
-        'Overnight habitat heating, air circulation, dust accumulation, and greenhouse crop growth updated across Outpost Zero.',
+      summaryNote: newlySpoiled
+        ? 'Overnight frost and low power froze irrigation lines and spoiled Greenhouse crops.'
+        : nextLeakActive
+          ? 'Radiation leak increased cabin exposure overnight; repair shelter shielding on the next Sol.'
+          : 'Overnight habitat heating, air circulation, dust accumulation, and greenhouse crop growth updated across Outpost Zero.',
       criticalWarning:
         criticalWarnings.length > 0
           ? `${criticalWarnings.join(' · ')}. Prioritize recovery next Sol.`
@@ -645,7 +957,12 @@ export function advanceToNextSol(state: GameState): GameState {
   }
 
   const nextSol = state.currentSol + 1;
-  const nextEvent = selectEventForSol(nextSol, state.usedEventIds, state.missionSeed);
+  const nextEvent = selectEventForSol(
+    nextSol,
+    state.usedEventIds,
+    state.missionSeed,
+    state.missionConfig.spaceWeatherMode
+  );
   const prevGh = state.greenhouse ?? createInitialGreenhouseState();
   const envEffects = applyEventEnvironmentEffects(state, nextEvent, nextSol);
 
@@ -684,11 +1001,15 @@ export function applyGreenhouseAction(
     return state;
   }
 
-  if (actionId === 'harvest-crops' && !prevGh.harvestReadiness) {
+  if (actionId === 'harvest-crops' && (!prevGh.harvestReadiness || prevGh.cropsSpoiled)) {
     return state;
   }
 
-  if (actionId === 'allocate-power' && prevRes.power < 15) {
+  if (actionId === 'allocate-power' && (prevRes.power < 15 || prevGh.cropsSpoiled)) {
+    return state;
+  }
+
+  if (actionId === 'reseed-crops' && !prevGh.cropsSpoiled) {
     return state;
   }
 
@@ -702,6 +1023,8 @@ export function applyGreenhouseAction(
   let crewEnergyDelta = 0;
   let nextPowerMode = prevGh.powerConsumption;
   let nextIrrigation = prevGh.irrigationStatus;
+  let nextCropsSpoiled = Boolean(prevGh.cropsSpoiled);
+  let nextLowPowerStreak = prevGh.lowPowerStreak ?? 0;
   let title = '';
   let explanation = '';
 
@@ -750,6 +1073,19 @@ export function applyGreenhouseAction(
       explanation =
         'Harvesting mature greens added +18% Food Reserves and boosted Life Support (+8%), then replanted fresh seedlings. Processing and replanting spent 10% Water, 3% Power, and crew energy.';
       break;
+
+    case 'reseed-crops':
+      title = 'Spoiled Crops Cleared & Re-seeded';
+      nextCropsSpoiled = false;
+      nextLowPowerStreak = 0;
+      ghHealthDelta = 10;
+      powerDelta = -6;
+      waterDelta = -8;
+      crewEnergyDelta = -6;
+      growthDelta = 15;
+      explanation =
+        'Crew cleared frozen spoiled biomass, flushed nutrient trays, and planted new seedlings (15% Growth). Re-seeding spent 6% Power, 8% Water, and crew energy.';
+      break;
   }
 
   const nextLife = clampResource(prevRes.lifeSupport + lifeDelta);
@@ -761,10 +1097,19 @@ export function applyGreenhouseAction(
   const nextGrowth =
     actionId === 'harvest-crops'
       ? 20
-      : clampResource(prevGh.cropGrowthProgress + growthDelta);
+      : actionId === 'reseed-crops'
+        ? 15
+        : nextCropsSpoiled
+          ? 0
+          : clampResource(prevGh.cropGrowthProgress + growthDelta);
 
-  const nextGreenhouseStatus: ResourceState['greenhouseStatus'] =
-    nextGhHealth >= 70 ? 'Thriving' : nextGhHealth >= 40 ? 'Strained' : 'Damaged';
+  const nextGreenhouseStatus: ResourceState['greenhouseStatus'] = nextCropsSpoiled
+    ? 'Damaged'
+    : nextGhHealth >= 70
+      ? 'Thriving'
+      : nextGhHealth >= 40
+        ? 'Strained'
+        : 'Damaged';
 
   const nextResources: ResourceState = {
     ...prevRes,
@@ -779,24 +1124,20 @@ export function applyGreenhouseAction(
 
   const updatedCrewMembers =
     crewEnergyDelta !== 0
-      ? state.crew.members.map((m) => ({
-          ...m,
-          energy: clampResource(m.energy + crewEnergyDelta),
-        }))
+      ? updateCrewMembers(state.crew.members, { energyDelta: crewEnergyDelta })
       : state.crew.members;
-  const avgEnergy = Math.round(
-    updatedCrewMembers.reduce((sum, m) => sum + m.energy, 0) /
-      updatedCrewMembers.length
-  );
+  const avgEnergy = computeCrewReadiness(updatedCrewMembers);
 
   const nextGreenhouse: GreenhouseState = {
     health: nextGhHealth,
     waterAvailability: nextWater,
     cropGrowthProgress: nextGrowth,
-    cropGrowthStage: getCropGrowthStage(nextGrowth),
+    cropGrowthStage: getCropGrowthStage(nextGrowth, nextCropsSpoiled),
     powerConsumption: nextPowerMode,
     irrigationStatus: nextIrrigation,
-    harvestReadiness: nextGrowth >= 100,
+    harvestReadiness: !nextCropsSpoiled && nextGrowth >= 100,
+    lowPowerStreak: nextLowPowerStreak,
+    cropsSpoiled: nextCropsSpoiled,
     actionsUsedThisSol: [...prevGh.actionsUsedThisSol, actionId],
     lastActionFeedback: {
       actionId,
@@ -814,7 +1155,7 @@ export function applyGreenhouseAction(
     },
   };
 
-  const failureReason = checkFailureReason(nextResources);
+  const failureReason = checkFailureReason(nextResources, updatedCrewMembers);
   const nextPhase = failureReason ? 'report' : state.phase;
   const nextHistory = failureReason
     ? [
@@ -892,13 +1233,10 @@ export function applyPowerAction(
   const nextSolar = clampResource(prevRes.solarGeneration + 12);
   const nextPower = clampResource(prevRes.power + 8);
   const nextLife = clampResource(prevRes.lifeSupport - 4);
-  const updatedCrew = state.crew.members.map((m) => ({
-    ...m,
-    energy: clampResource(m.energy - 5),
-  }));
-  const avgEnergy = Math.round(
-    updatedCrew.reduce((s, m) => s + m.energy, 0) / updatedCrew.length
-  );
+  const updatedCrew = updateCrewMembers(state.crew.members, {
+    energyDelta: -5,
+  });
+  const avgEnergy = computeCrewReadiness(updatedCrew);
 
   const nextResources: ResourceState = {
     ...prevRes,
@@ -909,7 +1247,7 @@ export function applyPowerAction(
     oxygenAvailability: clampResource(prevRes.oxygenAvailability - 4),
   };
 
-  const failureReason = checkFailureReason(nextResources);
+  const failureReason = checkFailureReason(nextResources, updatedCrew);
 
   return {
     ...state,
@@ -955,6 +1293,7 @@ export function applyShelterAction(
   let nextReadiness = prevShelter.shelterReadiness;
   let nextSheltered = prevShelter.crewSheltered;
   let nextExposure = prevRes.crewExposureRisk;
+  let nextLeakActive = Boolean(prevShelter.radiationLeakActive);
   let crewEnergyDelta = 0;
   let title = '';
   let explanation = '';
@@ -981,16 +1320,23 @@ export function applyShelterAction(
         'Returning to full habitat bays restores normal maintenance and greenhouse access (+2% Life Support) while leaving thicker storm shelter walls (-2% Radiation margin).';
       break;
 
-    case 'reinforce-shelter':
+    case 'reinforce-shelter': {
       if (prevRes.power < 12) return state;
+      const wasLeaking = Boolean(prevShelter.radiationLeakActive);
+      nextLeakActive = false;
       nextReadiness = clampResource(prevShelter.shelterReadiness + 14);
-      nextRad = clampResource(prevRes.radiationProtection + 6);
+      nextRad = clampResource(prevRes.radiationProtection + (wasLeaking ? 10 : 6));
       nextPower = clampResource(prevRes.power - 6);
+      nextExposure = nextRad >= 50 ? 'Low' : 'Moderate';
       crewEnergyDelta = -5;
-      title = 'Shelter Shielding Reinforced';
-      explanation =
-        'Adding polyethylene storage packs and checking water-wall bladders improved Shelter Readiness (+14%) and Radiation Protection (+6%), at the cost of 6% Power and crew construction time.';
+      title = wasLeaking
+        ? 'Radiation Leak Sealed & Shelter Reinforced'
+        : 'Shelter Shielding Reinforced';
+      explanation = wasLeaking
+        ? 'Patched breached polyethylene bladders and topped off water-wall shielding, sealing the active Radiation Leak (+10% Radiation Protection, +14% Shelter Readiness) at the cost of 6% Power and crew labor.'
+        : 'Adding polyethylene storage packs and checking water-wall bladders improved Shelter Readiness (+14%) and Radiation Protection (+6%), at the cost of 6% Power and crew construction time.';
       break;
+    }
   }
 
   const nextResources: ResourceState = {
@@ -1005,16 +1351,13 @@ export function applyShelterAction(
     crewExposureRisk: nextExposure,
   };
 
-  const updatedCrew = state.crew.members.map((m) => ({
-    ...m,
-    energy: clampResource(m.energy + crewEnergyDelta),
-    status: nextSheltered ? ('Sheltered' as const) : ('Active' as const),
-  }));
-  const avgEnergy = Math.round(
-    updatedCrew.reduce((s, m) => s + m.energy, 0) / updatedCrew.length
-  );
+  const updatedCrew = updateCrewMembers(state.crew.members, {
+    energyDelta: crewEnergyDelta,
+    preferredStatus: nextSheltered ? 'Sheltered' : 'Active',
+  });
+  const avgEnergy = computeCrewReadiness(updatedCrew);
 
-  const failureReason = checkFailureReason(nextResources);
+  const failureReason = checkFailureReason(nextResources, updatedCrew);
 
   return {
     ...state,
@@ -1024,6 +1367,7 @@ export function applyShelterAction(
       ...prevShelter,
       shelterReadiness: nextReadiness,
       crewSheltered: nextSheltered,
+      radiationLeakActive: nextLeakActive,
       actionsUsedThisSol: [...prevShelter.actionsUsedThisSol, actionId],
       lastActionFeedback: {
         title,
@@ -1066,12 +1410,21 @@ export function buildMissionReport(
     );
   }
 
+  const crewAlive = state.crew.members.filter((m) => m.status !== 'Deceased').length;
+  const crewTotal = state.crew.members.length;
+  const operableCount = state.crew.members.filter(
+    (m) => m.status !== 'Deceased' && m.status !== 'Incapacitated'
+  ).length;
+
   let failedSystem: string | null = null;
   if (!succeeded) {
-    if (lifeSupport <= 0) failedSystem = 'Life Support';
+    if (crewAlive <= crewTotal - 2 || operableCount === 0) failedSystem = 'Crew Health';
+    else if (lifeSupport <= 0) failedSystem = 'Life Support';
     else if (power <= 0) failedSystem = 'Power';
     else if (radiationProtection <= 0) failedSystem = 'Radiation Protection';
   }
+
+  const site = getLandingSiteProfile(state.missionConfig.landingSite);
 
   return {
     outcome: succeeded ? 'success' : 'failure',
@@ -1084,6 +1437,12 @@ export function buildMissionReport(
         'One of the outpost systems dropped to critical zero. Real space missions run simulations like this hundreds of times to learn how to protect crews!',
     solsSurvived,
     maxSols: state.missionConfig.maxSols,
+    missionSeed: state.missionSeed,
+    landingSiteName: site.name,
+    spaceWeatherMode: state.missionConfig.spaceWeatherMode ?? 'standard',
+    crewAlive,
+    crewTotal,
+    cumulativeDoseMSv: state.radiationShelter?.cumulativeDoseMSv ?? 0.67,
     finalResources: {
       lifeSupport,
       power,

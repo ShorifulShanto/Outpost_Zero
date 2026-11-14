@@ -54,7 +54,7 @@ export function MarsEnvironmentPanel({ environment }: MarsEnvironmentPanelProps)
         aria-expanded={expanded}
         className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] flex items-center justify-between gap-2 text-xs font-semibold text-[#EAF2FF] transition-colors cursor-pointer"
       >
-        <span>Explore Martian Environment Facts</span>
+        <span>Explore Mars Weather &amp; Ground Facts</span>
         {expanded ? (
           <ChevronUp className="w-4 h-4 text-[#A8B6CC]" />
         ) : (

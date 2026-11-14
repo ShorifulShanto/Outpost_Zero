@@ -24,14 +24,14 @@ export function AboutPage({
           />
         </div>
         {/* Intro Hero */}
-        <section className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-8">
-          <p className="text-xs font-medium text-[#29B6F6]">
-            Outpost Zero · Explore. Build. Survive. Discover.
+        <section className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 sm:p-8 space-y-2.5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#E4774E]">
+            Blast Off to Something New
           </p>
-          <h1 className="mt-2 font-display text-2xl sm:text-4xl font-bold text-[#EAF2FF] [text-wrap:balance]">
+          <h1 className="font-display text-2xl sm:text-4xl font-bold text-[#EAF2FF] [text-wrap:balance]">
             About Outpost Zero
           </h1>
-          <p className="mt-3 text-sm sm:text-base text-[#A8B6CC] leading-relaxed max-w-3xl">
+          <p className="text-sm sm:text-base text-[#A8B6CC] leading-relaxed max-w-3xl">
             Outpost Zero helps young explorers aged 7–12 learn how astronauts keep a
             Mars research base alive through air, power, food, and radiation trade-offs.
           </p>
@@ -107,9 +107,11 @@ export function AboutPage({
           </div>
 
           <p className="text-sm text-[#A8B6CC] leading-relaxed">
-            Live imagery and space-weather records come from NASA Open APIs and the NASA
+            Imagery and space-weather records come from NASA Open APIs and the NASA
             Image Library, alongside historical research from OSDR, RadLab, Mars Trek, and
-            the Canadian Space Agency. NASA and CSA do not endorse this project.
+            the Canadian Space Agency—all unaltered and credited to their original
+            sources. Per NASA Media Usage Guidelines (14 CFR Part 1221), official NASA
+            insignias are not displayed; NASA and CSA do not endorse this project.
           </p>
 
           <div className="pt-2 flex flex-wrap gap-3">

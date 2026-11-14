@@ -33,9 +33,19 @@ export function evaluateMissionAdvisor(
     (((resources.foodReserves + (greenhouse?.health ?? 75)) / 2) / 100) * 10
   );
   const lifeSupportScore = Math.max(0, Math.min(30, lifeBase + foodAndGh));
-  if (lifeSupportScore < 27) {
+  const deceasedCount =
+    state.crew?.members.filter((m) => m.status === 'Deceased').length ?? 0;
+  const incapacitatedCount =
+    state.crew?.members.filter((m) => m.status === 'Incapacitated').length ?? 0;
+
+  if (lifeSupportScore < 27 || greenhouse?.cropsSpoiled) {
     lostPointsNotes.push(
-      `Life Support (${lifeSupportScore}/30): Ended at ${resources.lifeSupport}% Life Support, ${resources.foodReserves}% Food, and ${greenhouse?.health ?? 0}% Greenhouse.`
+      `Life Support (${lifeSupportScore}/30): Ended at ${resources.lifeSupport}% Life Support, ${resources.foodReserves}% Food, and ${greenhouse?.health ?? 0}% Greenhouse${greenhouse?.cropsSpoiled ? ' (crops spoiled)' : ''}.`
+    );
+  }
+  if (deceasedCount > 0 || incapacitatedCount > 0) {
+    lostPointsNotes.push(
+      `Crew Health: ${deceasedCount} astronaut(s) lost and ${incapacitatedCount} incapacitated during prolonged habitat hazards.`
     );
   }
 
@@ -75,12 +85,14 @@ export function evaluateMissionAdvisor(
     0,
     Math.min(25, radBase + shelterBonus + spePenalty)
   );
-  if (radiationScore < 22) {
+  if (radiationScore < 22 || radiationShelter?.radiationLeakActive) {
     lostPointsNotes.push(
       `Radiation (${radiationScore}/25): ${
-        delayedSpe
-          ? 'Delayed entering shelter during a Solar Particle Event.'
-          : `Shielding finished at ${resources.radiationProtection}% (${radiationShelter?.shelterReadiness ?? 0}% shelter readiness).`
+        radiationShelter?.radiationLeakActive
+          ? `Radiation leak remained active (${radiationShelter.cumulativeDoseMSv ?? 0.67} mSv cumulative dose).`
+          : delayedSpe
+            ? 'Delayed entering shelter during a Solar Particle Event.'
+            : `Shielding finished at ${resources.radiationProtection}% (${radiationShelter?.shelterReadiness ?? 0}% shelter readiness).`
       }`
     );
   }
@@ -194,12 +206,17 @@ export function evaluateMissionAdvisor(
   const speDecision = decisionHistory.find(
     (d) => d.eventId === 'solar-storm-warning'
   );
-  if (speDecision?.approach === 'wait-for-earth' || resources.radiationProtection < 40) {
+  if (
+    speDecision?.approach === 'wait-for-earth' ||
+    resources.radiationProtection < 40 ||
+    radiationShelter?.radiationLeakActive
+  ) {
     recommendations.push({
       domain: 'Radiation',
       status: 'Improvement',
-      message:
-        'Waiting during a Solar Particle Event increased radiation risk. Move the crew inside the water-walled storm shelter right away.',
+      message: radiationShelter?.radiationLeakActive
+        ? `An unsealed radiation leak raised cumulative crew dose to ${radiationShelter.cumulativeDoseMSv ?? 0.67} mSv. Use Reinforce Shelter Shielding whenever shielding drops below 35% or during SPE warnings.`
+        : 'Waiting during a Solar Particle Event increased radiation risk. Move the crew inside the water-walled storm shelter right away.',
       nasaContext: {
         sourceLabel: resolvedDonkiContext.sourceLabel,
         observationTitle: resolvedDonkiContext.headline,
@@ -211,7 +228,7 @@ export function evaluateMissionAdvisor(
     recommendations.push({
       domain: 'Radiation',
       status: 'Strength',
-      message: `Shielding finished strong at ${resources.radiationProtection}% with ${radiationShelter?.shelterReadiness ?? 75}% shelter readiness.`,
+      message: `Shielding finished strong at ${resources.radiationProtection}% (${radiationShelter?.shelterReadiness ?? 75}% readiness, ${radiationShelter?.cumulativeDoseMSv ?? 0.67} mSv cumulative crew dose).`,
       nasaContext: {
         sourceLabel: resolvedDonkiContext.sourceLabel,
         observationTitle: resolvedDonkiContext.headline,
@@ -259,7 +276,22 @@ export function evaluateMissionAdvisor(
   }
 
   // Greenhouse & Life Support analysis
-  if (
+  if (greenhouse?.cropsSpoiled) {
+    recommendations.push({
+      domain: 'Greenhouse',
+      status: 'Improvement',
+      message:
+        'Low power (<25% for two consecutive Sols) or depleted irrigation froze pipes and spoiled crops. Keep batteries above 25% and use Clear Spoiled Crops & Re-seed to recover.',
+      researchNote: {
+        agency: 'CSA',
+        dataType: 'Educational Material',
+        title: 'Space Farming & Nutrition',
+        detail:
+          'CSA food guides (~1,900–3,200 kcal/day crew needs) pair reliable stored meals with energy-aware greenhouse crops.',
+        sourceUrl: 'https://www.asc-csa.gc.ca/eng/astronauts/living-in-space/eating-in-space.asp',
+      },
+    });
+  } else if (
     greenhouse?.powerConsumption === 'Boosted' &&
     resources.power < 35
   ) {
@@ -277,24 +309,29 @@ export function evaluateMissionAdvisor(
         sourceUrl: 'https://www.asc-csa.gc.ca/eng/astronauts/living-in-space/eating-in-space.asp',
       },
     });
-  } else {
-    recommendations.push({
-      domain: 'Life Support',
-      status: resources.lifeSupport >= 50 ? 'Strength' : 'Improvement',
-      message:
-        resources.lifeSupport >= 50
+  }
+
+  recommendations.push({
+    domain: 'Life Support',
+    status:
+      resources.lifeSupport >= 50 && deceasedCount === 0 && incapacitatedCount === 0
+        ? 'Strength'
+        : 'Improvement',
+    message:
+      deceasedCount > 0 || incapacitatedCount > 0
+        ? `Crew health suffered (${deceasedCount} lost, ${incapacitatedCount} incapacitated). Keep Life Support, Power, and Radiation Shielding above critical thresholds to protect astronauts.`
+        : resources.lifeSupport >= 50
           ? `Life Support (${resources.lifeSupport}%) and Food (${resources.foodReserves}%) stayed healthy across your Sols.`
           : `Life Support fell to ${resources.lifeSupport}%. Balance oxygen recycling and greenhouse water repairs carefully.`,
-      researchNote: {
-        agency: 'NASA OSDR / CSA',
-        dataType: 'Historical Research',
-        title: 'Space Biology & Crew Nutrition',
-        detail:
-          'NASA OSDR studies (bone OSD-352, muscle OSD-47, immune OSD-738, sleep OSD-253) and CSA nutrition guides (1,900–3,200 kcal/day) show why air, rest, and food all protect crew health.',
-        sourceUrl: 'https://osdr.nasa.gov/',
-      },
-    });
-  }
+    researchNote: {
+      agency: 'NASA OSDR / CSA',
+      dataType: 'Historical Research',
+      title: 'Space Biology & Crew Nutrition',
+      detail:
+        'NASA OSDR studies (bone OSD-352, muscle OSD-47, immune OSD-738, sleep OSD-253) and CSA nutrition guides (1,900–3,200 kcal/day) show why air, rest, and food all protect crew health.',
+      sourceUrl: 'https://osdr.nasa.gov/',
+    },
+  });
 
   return {
     scoreBreakdown: {

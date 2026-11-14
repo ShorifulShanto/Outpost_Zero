@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { ArrowRight, Maximize2 } from 'lucide-react';
 import {
   FeaturedMarsPhoto,
@@ -10,13 +10,22 @@ import {
   recordPhotoInspected,
 } from '../utils/explorerProgress';
 import { CornerWatermark, MARS_FALLBACK_IMAGE } from './DataWatermark';
-import { MarsPhotoModal } from './MarsPhotoModal';
+
+const MarsPhotoModal = lazy(() =>
+  import('./MarsPhotoModal').then((m) => ({ default: m.MarsPhotoModal }))
+);
 
 interface OutpostSchematicProps {
   resources?: ResourceState;
   isTransmitting?: boolean;
   isPaused?: boolean;
   compact?: boolean;
+  radiationLeakActive?: boolean;
+  cropsSpoiled?: boolean;
+  frostWarning?: boolean;
+  panelDustLevel?: number;
+  stormSeverity?: string;
+  crewSheltered?: boolean;
   marsPhoto?: FeaturedMarsPhoto | null;
   onSelectSystem?: (system: ResourceKey) => void;
   onNavigate?: (route: AppRoute) => void;
@@ -33,26 +42,26 @@ const SYSTEM_INSPECT_INFO: Record<
   }
 > = {
   lifeSupport: {
-    title: 'Hydroponic Greenhouse & O2 Bay',
+    title: 'Greenhouse & Clean Air Dome',
     detail:
-      'LED plant racks grow fresh greens while air scrubbers recycle CO2 back into breathable oxygen.',
-    quickStat: 'Closed-loop water & O2 recycling',
+      'Grow lights help fresh veggies sprout while air filters turn crew breath back into clean oxygen.',
+    quickStat: 'Recycles water & fresh air',
     color: '#29B6F6',
-    badgeLabel: 'Dome 01 · Life Support',
+    badgeLabel: 'Dome 01 · Air & Food',
   },
   radiationProtection: {
-    title: 'Water-Wall Core & Storm Shelter',
+    title: 'Water-Wall Shelter & Airlock',
     detail:
-      'Packed Martian soil and water-filled dome walls absorb dangerous solar storm radiation.',
-    quickStat: 'Multi-layer storm shielding',
+      'Thick water walls and packed Mars soil block harmful space rays and solar storm bursts.',
+    quickStat: 'Storm-safe crew shelter',
     color: '#E4774E',
-    badgeLabel: 'Dome 02 · Shielded Core',
+    badgeLabel: 'Dome 02 · Safe Core',
   },
   power: {
-    title: 'Tilted Solar Wings & Battery Core',
+    title: 'Solar Panels & Battery Bank',
     detail:
-      'Sun-tracking solar panels charge insulated battery banks to heat the outpost through -63°C nights.',
-    quickStat: 'High-efficiency battery reserve',
+      'Blue solar wings catch weak Mars sunlight to charge warm heaters—unless red Mars dust covers them!',
+    quickStat: 'Sunlight & night batteries',
     color: '#FFB547',
     badgeLabel: 'Wing 03 · Solar Power',
   },
@@ -63,6 +72,12 @@ export function OutpostSchematic({
   isTransmitting = false,
   isPaused = false,
   compact = false,
+  radiationLeakActive = false,
+  cropsSpoiled = false,
+  frostWarning = false,
+  panelDustLevel = 12,
+  stormSeverity = 'Clear Skies',
+  crewSheltered = false,
   marsPhoto: externalMarsPhoto,
   onSelectSystem,
   onNavigate,
@@ -73,7 +88,10 @@ export function OutpostSchematic({
   const [surfaceImgError, setSurfaceImgError] = useState(false);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
 
+  // Only fetch full 6-photo deck when needed (saves network on initial Home load)
   useEffect(() => {
+    if (!photoModalOpen && externalMarsPhoto) return;
+    if (photoDeck.length > 0) return;
     let active = true;
     void fetchFeaturedMarsSurfaceDeck().then((deck) => {
       if (active && deck.length > 0) {
@@ -83,7 +101,7 @@ export function OutpostSchematic({
     return () => {
       active = false;
     };
-  }, []);
+  }, [photoModalOpen, externalMarsPhoto, photoDeck.length]);
 
   const primaryDeckPhoto = photoDeck[0] ?? null;
   const activePhoto = externalMarsPhoto ?? primaryDeckPhoto;
@@ -126,14 +144,34 @@ export function OutpostSchematic({
   const lifeVal = resources?.lifeSupport ?? 78;
   const powerVal = resources?.power ?? 76;
   const radVal = resources?.radiationProtection ?? 80;
-  const stormAlert = resources?.solarWeatherAlert === 'Storm Watch';
+  const stormAlert =
+    resources?.solarWeatherAlert === 'Storm Watch' ||
+    stormSeverity === 'Regional Storm' ||
+    stormSeverity === 'Light Dust';
+  const clampedDust = Math.max(0, Math.min(100, panelDustLevel));
+  const dustFilmOpacity = Math.min(0.86, clampedDust / 82);
 
-  const lifeColor =
-    lifeVal >= 60 ? '#29B6F6' : lifeVal >= 30 ? '#FFB547' : '#E4774E';
-  const powerColor =
-    powerVal >= 60 ? '#FFB547' : powerVal >= 30 ? '#FFB547' : '#E4774E';
-  const radColor =
-    radVal >= 60 ? '#29B6F6' : radVal >= 30 ? '#FFB547' : '#E4774E';
+  const lifeColor = cropsSpoiled
+    ? '#E4774E'
+    : lifeVal >= 60
+      ? '#29B6F6'
+      : lifeVal >= 30
+        ? '#FFB547'
+        : '#E4774E';
+  const powerColor = frostWarning
+    ? '#E4774E'
+    : powerVal >= 60
+      ? '#FFB547'
+      : powerVal >= 30
+        ? '#FFB547'
+        : '#E4774E';
+  const radColor = radiationLeakActive
+    ? '#E4774E'
+    : radVal >= 60
+      ? '#29B6F6'
+      : radVal >= 30
+        ? '#FFB547'
+        : '#E4774E';
 
   const activeInfo = SYSTEM_INSPECT_INFO[selectedSystem];
   const activePercent =
@@ -269,7 +307,17 @@ export function OutpostSchematic({
             <circle cx="518" cy="54" r="8" fill="#D4C2B8" opacity="0.22" />
             <circle cx="516" cy="53" r="6.5" fill="#EFE4DC" opacity="0.32" />
 
-            {stormAlert && <rect width="600" height="295" fill="url(#stormHaze)" />}
+            {stormAlert && (
+              <g aria-hidden="true">
+                <rect width="600" height="295" fill="url(#stormHaze)" />
+                <g stroke="#E4774E" strokeOpacity="0.34" strokeWidth="1.2" strokeLinecap="round">
+                  <line x1="25" y1="88" x2="115" y2="94" />
+                  <line x1="160" y1="112" x2="268" y2="118" />
+                  <line x1="360" y1="92" x2="495" y2="99" />
+                  <line x1="430" y1="142" x2="570" y2="150" />
+                </g>
+              </g>
+            )}
 
             {/* Far Canyon Rim & Jezero Mesas (Parallax Depth) */}
             <path
@@ -424,12 +472,48 @@ export function OutpostSchematic({
               <g>
                 <ellipse cx="116" cy="209" rx="46" ry="9" fill="#0B192B" />
                 {/* 3D Glowing Plant Tier Racks */}
-                <path d="M80 206 L108 197 L152 197 L148 206 Z" fill="#194B49" opacity="0.85" />
-                <rect x="85" y="191" width="16" height="8" rx="2" fill="#34D399" opacity="0.82" />
-                <rect x="108" y="188" width="18" height="9" rx="2" fill="#34D399" opacity="0.92" />
-                <rect x="132" y="191" width="14" height="8" rx="2" fill="#2DD4BF" opacity="0.82" />
+                <path
+                  d="M80 206 L108 197 L152 197 L148 206 Z"
+                  fill={cropsSpoiled ? '#4A1D19' : '#194B49'}
+                  opacity="0.85"
+                />
+                <rect
+                  x="85"
+                  y="191"
+                  width="16"
+                  height="8"
+                  rx="2"
+                  fill={cropsSpoiled ? '#B94A32' : '#34D399'}
+                  opacity="0.82"
+                />
+                <rect
+                  x="108"
+                  y="188"
+                  width="18"
+                  height="9"
+                  rx="2"
+                  fill={cropsSpoiled ? '#E4774E' : '#34D399'}
+                  opacity="0.92"
+                />
+                <rect
+                  x="132"
+                  y="191"
+                  width="14"
+                  height="8"
+                  rx="2"
+                  fill={cropsSpoiled ? '#9A3412' : '#2DD4BF'}
+                  opacity="0.82"
+                />
                 {/* Hydroponic Light Strip */}
-                <line x1="88" y1="184" x2="144" y2="184" stroke="#6FE3FF" strokeWidth="1.5" opacity="0.7" />
+                <line
+                  x1="88"
+                  y1="184"
+                  x2="144"
+                  y2="184"
+                  stroke={cropsSpoiled ? '#E4774E' : frostWarning ? '#FFB547' : '#6FE3FF'}
+                  strokeWidth="1.5"
+                  opacity="0.7"
+                />
               </g>
 
               {/* 3D Volumetric Glass Shell */}
@@ -480,6 +564,31 @@ export function OutpostSchematic({
               >
                 LIFE SUPPORT
               </text>
+              {(cropsSpoiled || frostWarning) && (
+                <g transform="translate(116, 134)">
+                  <rect
+                    x="-34"
+                    y="-10"
+                    width="68"
+                    height="15"
+                    rx="3"
+                    fill="#080D1B"
+                    stroke={cropsSpoiled ? '#E4774E' : '#FFB547'}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="1"
+                    textAnchor="middle"
+                    fill={cropsSpoiled ? '#E4774E' : '#FFB547'}
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    {cropsSpoiled ? 'SPOILED' : 'FROST RISK'}
+                  </text>
+                </g>
+              )}
             </g>
 
             {/* ================= MODULE 2: 3D SHIELDED CORE HABITAT DOME ================= */}
@@ -544,6 +653,16 @@ export function OutpostSchematic({
                 stroke={selectedSystem === 'radiationProtection' ? '#EAF2FF' : radColor}
                 strokeWidth={selectedSystem === 'radiationProtection' ? '2.2' : '1.6'}
               />
+              {crewSheltered && (
+                <path
+                  d="M213 213 C213 111, 395 111, 395 213"
+                  fill="none"
+                  stroke="#29B6F6"
+                  strokeOpacity="0.6"
+                  strokeWidth="2"
+                  strokeDasharray="6 4"
+                />
+              )}
 
               {/* 3D Geodesic Armor Ribs */}
               <path
@@ -685,6 +804,31 @@ export function OutpostSchematic({
               >
                 SHIELDED CORE
               </text>
+              {radiationLeakActive && (
+                <g transform="translate(304, 71)">
+                  <rect
+                    x="-36"
+                    y="-10"
+                    width="72"
+                    height="15"
+                    rx="3"
+                    fill="#080D1B"
+                    stroke="#E4774E"
+                    strokeWidth="1.1"
+                  />
+                  <text
+                    x="0"
+                    y="1"
+                    textAnchor="middle"
+                    fill="#E4774E"
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    RAD LEAK
+                  </text>
+                </g>
+              )}
             </g>
 
             {/* ================= MODULE 3: 3D SOLAR ARRAY & BATTERY STATION ================= */}
@@ -772,8 +916,17 @@ export function OutpostSchematic({
                   stroke={selectedSystem === 'power' ? '#EAF2FF' : powerColor}
                   strokeWidth={selectedSystem === 'power' ? '2' : '1.5'}
                 />
+                {/* Sunlight Beams (dimmer during storms or heavy dust) */}
+                {!stormAlert && (
+                  <g stroke="#FFB547" strokeOpacity={Math.max(0.18, 0.55 - dustFilmOpacity * 0.4)} strokeWidth="1.2" strokeDasharray="3 3">
+                    <line x1="505" y1="128" x2="514" y2="148" />
+                    <line x1="532" y1="122" x2="540" y2="142" />
+                    <line x1="556" y1="118" x2="564" y2="136" />
+                  </g>
+                )}
+
                 {/* Photovoltaic Cell Grid Lines */}
-                <g stroke="#62B6FF" strokeOpacity="0.4" strokeWidth="0.9">
+                <g stroke="#62B6FF" strokeOpacity={Math.max(0.12, 0.45 - dustFilmOpacity * 0.35)} strokeWidth="0.9">
                   <line x1="504" y1="152" x2="512" y2="171" />
                   <line x1="526" y1="146" x2="534" y2="165" />
                   <line x1="546" y1="141" x2="554" y2="160" />
@@ -781,11 +934,45 @@ export function OutpostSchematic({
                   <line x1="520" y1="166" x2="530" y2="190" />
                   <line x1="540" y1="160" x2="550" y2="184" />
                 </g>
+
+                {/* Visible Martian Dust Coating & Grains Settled on Solar Wings */}
+                {clampedDust > 2 && (
+                  <g pointerEvents="none">
+                    <polygon
+                      points="484,158 564,136 572,155 492,177"
+                      fill="#C9643B"
+                      fillOpacity={dustFilmOpacity * 0.72}
+                    />
+                    <polygon
+                      points="476,178 556,156 566,180 486,202"
+                      fill="#C9643B"
+                      fillOpacity={dustFilmOpacity * 0.78}
+                    />
+                    <g fill="#E4966A" fillOpacity={Math.min(0.95, dustFilmOpacity + 0.15)}>
+                      <circle cx="502" cy="162" r="1.4" />
+                      <circle cx="524" cy="154" r="1.6" />
+                      <circle cx="548" cy="148" r="1.3" />
+                      <circle cx="496" cy="186" r="1.7" />
+                      <circle cx="518" cy="179" r="1.5" />
+                      <circle cx="536" cy="172" r="1.8" />
+                      <circle cx="552" cy="169" r="1.3" />
+                      {clampedDust >= 20 && (
+                        <>
+                          <circle cx="510" cy="160" r="1.5" />
+                          <circle cx="538" cy="150" r="1.6" />
+                          <circle cx="507" cy="184" r="1.8" />
+                          <circle cx="529" cy="175" r="1.4" />
+                          <circle cx="545" cy="174" r="1.7" />
+                        </>
+                      )}
+                    </g>
+                  </g>
+                )}
               </g>
 
               <text
                 x="512"
-                y="124"
+                y="112"
                 textAnchor="middle"
                 fill="#EAF2FF"
                 fontSize="10"
@@ -793,6 +980,31 @@ export function OutpostSchematic({
               >
                 SOLAR &amp; POWER
               </text>
+              {clampedDust >= 15 && (
+                <g transform="translate(524, 96)">
+                  <rect
+                    x="-34"
+                    y="-9"
+                    width="68"
+                    height="14"
+                    rx="3"
+                    fill="#080D1B"
+                    stroke="#FFB547"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="1"
+                    textAnchor="middle"
+                    fill="#FFB547"
+                    fontSize="8"
+                    fontWeight="700"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    {clampedDust}% DUSTY
+                  </text>
+                </g>
+              )}
             </g>
 
             {/* Bottom Sector Coordinates Caption */}
@@ -825,12 +1037,19 @@ export function OutpostSchematic({
               alt={
                 isLiveSurfacePhoto
                   ? activePhoto?.title ?? 'Mars Surface View from NASA Image Library'
-                  : 'Simulated Mars surface view at Jezero Crater'
+                  : 'AI-generated Mars surface view at Jezero Crater'
               }
+              loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               onError={() => setSurfaceImgError(true)}
               className="w-full h-full object-cover block transition-transform duration-300 group-hover:scale-105"
             />
+            {!isLiveSurfacePhoto && (
+              <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-[#080D1B]/90 border border-[#293A54] text-[9px] font-mono-tabular text-[#A8B6CC] leading-none pointer-events-none">
+                AI Image
+              </span>
+            )}
           </div>
           <div className="min-w-0 flex-1 pr-1">
             <div className="flex items-center justify-between gap-2">
@@ -843,7 +1062,9 @@ export function OutpostSchematic({
               </p>
               <CornerWatermark
                 label={
-                  isLiveSurfacePhoto ? 'Data: NASA Image Library' : 'Simulated Terrain'
+                  isLiveSurfacePhoto
+                    ? 'Data: NASA Image Library'
+                    : 'AI-Generated Image · Saved'
                 }
               />
             </div>
@@ -920,17 +1141,21 @@ export function OutpostSchematic({
         </div>
       </div>
 
-      {/* Interactive Mars Surface Explorer Lightbox Modal */}
-      <MarsPhotoModal
-        isOpen={photoModalOpen}
-        photos={modalPhotos}
-        initialIndex={0}
-        onClose={() => setPhotoModalOpen(false)}
-        onOpenObservatory={
-          onNavigate ? () => onNavigate('observatory') : undefined
-        }
-        onOpenSimulator={onNavigate ? () => onNavigate('simulator') : undefined}
-      />
+      {/* Lazy Interactive Mars Surface Explorer Lightbox Modal */}
+      {photoModalOpen && (
+        <Suspense fallback={null}>
+          <MarsPhotoModal
+            isOpen={photoModalOpen}
+            photos={modalPhotos}
+            initialIndex={0}
+            onClose={() => setPhotoModalOpen(false)}
+            onOpenObservatory={
+              onNavigate ? () => onNavigate('observatory') : undefined
+            }
+            onOpenSimulator={onNavigate ? () => onNavigate('simulator') : undefined}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

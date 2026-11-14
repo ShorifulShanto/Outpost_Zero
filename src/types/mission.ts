@@ -37,8 +37,15 @@ export interface CrewMember {
   name: string;
   role: string;
   specialty: string;
+  health: number; // 0 - 100
   energy: number; // 0 - 100
-  status: 'Active' | 'Sheltered' | 'Resting' | 'Repair Duty';
+  status:
+    | 'Active'
+    | 'Sheltered'
+    | 'Resting'
+    | 'Repair Duty'
+    | 'Incapacitated'
+    | 'Deceased';
 }
 
 export interface CrewState {
@@ -157,13 +164,15 @@ export type CropGrowthStage =
   | 'Seedling'
   | 'Vegetative'
   | 'Flowering'
-  | 'Harvest Ready';
+  | 'Harvest Ready'
+  | 'Spoiled';
 
 export type GreenhouseActionId =
   | 'maintain-equipment'
   | 'allocate-power'
   | 'repair-irrigation'
-  | 'harvest-crops';
+  | 'harvest-crops'
+  | 'reseed-crops';
 
 export interface GreenhouseActionFeedback {
   actionId: GreenhouseActionId;
@@ -188,6 +197,8 @@ export interface GreenhouseState {
   powerConsumption: 'Low' | 'Standard' | 'Boosted';
   irrigationStatus: 'Flowing' | 'Low Pressure' | 'Clogged';
   harvestReadiness: boolean;
+  lowPowerStreak: number;
+  cropsSpoiled: boolean;
   actionsUsedThisSol: GreenhouseActionId[];
   lastActionFeedback: GreenhouseActionFeedback | null;
 }
@@ -226,6 +237,8 @@ export interface RadiationShelterState {
   crewSheltered: boolean;
   shieldingMaterials: string[];
   radiationAlert: 'Background GCR' | 'SPE Advisory' | 'SPE Warning';
+  radiationLeakActive: boolean;
+  cumulativeDoseMSv: number;
   actionsUsedThisSol: ShelterActionId[];
   lastActionFeedback: {
     title: string;
@@ -282,12 +295,22 @@ export interface MissionScoreBreakdown {
   lostPointsNotes: string[];
 }
 
+export type LandingSiteId = 'jezero-floor' | 'neretva-delta' | 'crater-rim';
+
+export type SpaceWeatherMode = 'standard' | 'live-nasa';
+
 export interface MissionReport {
   outcome: 'success' | 'failure';
   title: string;
   summary: string;
   solsSurvived: number;
   maxSols: number;
+  missionSeed: number;
+  landingSiteName: string;
+  spaceWeatherMode: SpaceWeatherMode;
+  crewAlive: number;
+  crewTotal: number;
+  cumulativeDoseMSv: number;
   finalResources: {
     lifeSupport: number;
     power: number;
@@ -309,6 +332,9 @@ export interface GameState {
     maxSols: number;
     crewCount: number;
     outpostType: string;
+    landingSite?: LandingSiteId;
+    spaceWeatherMode?: SpaceWeatherMode;
+    liveSpaceWeatherLabel?: string;
   };
   missionSeed: number;
   phase: MissionPhase;

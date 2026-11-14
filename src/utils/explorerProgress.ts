@@ -402,3 +402,19 @@ export function subscribeMedalUnlocked(
   window.addEventListener(MEDAL_UNLOCKED_EVENT, handler);
   return () => window.removeEventListener(MEDAL_UNLOCKED_EVENT, handler);
 }
+
+export function resetExplorerProgress(): ExplorerProgressState {
+  const fresh = createDefaultExplorerProgress();
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(PROGRESS_KEY);
+      localStorage.removeItem(LEGACY_PROGRESS_KEY);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(PROGRESS_EVENT, { detail: fresh }));
+    }
+  } catch {
+    // Ignore storage errors safely
+  }
+  return fresh;
+}

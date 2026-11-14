@@ -58,8 +58,36 @@ export interface FeaturedMarsPhoto {
   missionTag?: string;
 }
 
+export interface RealtimeMarsPhoto {
+  id: string;
+  sol: number | null;
+  dateTaken: string;
+  title: string;
+  caption: string;
+  fullCaption: string;
+  camera: string;
+  imageUrl: string | null;
+  thumbUrl?: string | null;
+  hdUrl: string | null;
+  credit: string;
+  link: string | null;
+}
+
+export interface RealtimeMarsFeedResult {
+  source: NasaDataSource;
+  photos: RealtimeMarsPhoto[];
+  statusMessage: string;
+  fetchedAtIso: string;
+}
+
 const APOD_CACHE_TTL_MS = 30 * 60 * 1000;
+const REALTIME_MARS_CACHE_TTL_MS = 15 * 60 * 1000;
 const IMAGES_CACHE_TTL_MS = 30 * 60 * 1000;
+const MEDIA_FETCH_TIMEOUT_MS = 4500;
+
+let inFlightApodPromise: Promise<ApodFetchResult> | null = null;
+let inFlightRealtimeMarsPromise: Promise<RealtimeMarsFeedResult> | null = null;
+const inFlightImageQueries = new Map<string, Promise<NasaImageLibraryResult>>();
 
 export function toOneSentence(rawText: string, maxChars = 150): string {
   const cleaned = rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -151,69 +179,64 @@ function inferMissionTag(
   return 'Mars Exploration';
 }
 
-export async function fetchNasaApod(
-  options: { forceRefresh?: boolean } = {}
-): Promise<ApodFetchResult> {
-  const cacheKey = 'nasa_apod_latest';
-  if (!options.forceRefresh) {
-    const cached = readNasaCache<ApodFetchResult>(cacheKey, APOD_CACHE_TTL_MS);
-    if (cached) {
-      return {
-        ...cached.data,
-        source: 'cached',
-        fetchedAtIso: cached.cachedAtIso,
-        statusMessage: `Cached NASA APOD (${cached.cachedAtIso.slice(0, 10)}).`,
-      };
-    }
+function isPlaceholderApodPayload(payload: Record<string, unknown>): boolean {
+  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+  const url = typeof payload.url === 'string' ? payload.url.trim() : '';
+  return (
+    title.toLowerCase() === 'nasa science' ||
+    url.includes('nasa-logo@2x.png')
+  );
+}
+
+function getYesterdayUtcDateString(): string {
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return yesterday.toISOString().slice(0, 10);
+}
+
+async function requestSingleApod(
+  apiKey: string,
+  dateParam: string | undefined,
+  signal: AbortSignal
+): Promise<{ status: number; record: ApodRecord | null }> {
+  const url = new URL('https://api.nasa.gov/planetary/apod');
+  url.searchParams.set('api_key', apiKey);
+  url.searchParams.set('thumbs', 'true');
+  if (dateParam) {
+    url.searchParams.set('date', dateParam);
   }
 
-  const url = new URL('https://api.nasa.gov/planetary/apod');
-  url.searchParams.set('api_key', getNasaApiKey());
-  url.searchParams.set('thumbs', 'true');
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
 
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 8000);
+  if (response.status === 429 || !response.ok) {
+    return { status: response.status, record: null };
+  }
 
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
+  const payload = (await response.json()) as Record<string, unknown>;
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    typeof payload.title !== 'string' ||
+    typeof payload.explanation !== 'string' ||
+    typeof payload.date !== 'string' ||
+    isPlaceholderApodPayload(payload)
+  ) {
+    return { status: response.status, record: null };
+  }
 
-    if (response.status === 429 || !response.ok) {
-      return {
-        source: 'archived',
-        record: ARCHIVED_APOD_FALLBACK,
-        statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
-        fetchedAtIso: new Date().toISOString(),
-      };
-    }
+  const mediaType: 'image' | 'video' =
+    payload.media_type === 'video' ? 'video' : 'image';
+  const rawDisplayUrl =
+    mediaType === 'video' && typeof payload.thumbnail_url === 'string'
+      ? payload.thumbnail_url
+      : payload.url;
 
-    const payload = (await response.json()) as Record<string, unknown>;
-    if (
-      !payload ||
-      typeof payload !== 'object' ||
-      typeof payload.title !== 'string' ||
-      typeof payload.explanation !== 'string' ||
-      typeof payload.date !== 'string'
-    ) {
-      return {
-        source: 'archived',
-        record: ARCHIVED_APOD_FALLBACK,
-        statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
-        fetchedAtIso: new Date().toISOString(),
-      };
-    }
-
-    const mediaType: 'image' | 'video' =
-      payload.media_type === 'video' ? 'video' : 'image';
-    const rawDisplayUrl =
-      mediaType === 'video' && typeof payload.thumbnail_url === 'string'
-        ? payload.thumbnail_url
-        : payload.url;
-
-    const record: ApodRecord = {
+  return {
+    status: response.status,
+    record: {
       date: payload.date,
       title: payload.title.trim(),
       explanation: toOneSentence(payload.explanation, 190),
@@ -225,26 +248,104 @@ export async function fetchNasaApod(
         typeof payload.copyright === 'string' && payload.copyright.trim()
           ? payload.copyright.trim()
           : null,
-    };
+    },
+  };
+}
 
-    const liveResult: ApodFetchResult = {
-      source: 'live',
-      record,
-      statusMessage: `NASA APOD (${record.date}).`,
-      fetchedAtIso: new Date().toISOString(),
-    };
-    writeNasaCache(cacheKey, liveResult);
-    return liveResult;
-  } catch {
-    return {
-      source: 'archived',
-      record: ARCHIVED_APOD_FALLBACK,
-      statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
-      fetchedAtIso: new Date().toISOString(),
-    };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+export async function fetchNasaApod(
+  options: { forceRefresh?: boolean; date?: string } = {}
+): Promise<ApodFetchResult> {
+  const normalizedDate = options.date?.trim() || undefined;
+  const cacheKey = normalizedDate
+    ? `nasa_apod_${normalizedDate}`
+    : 'nasa_apod_latest';
+  if (!options.forceRefresh) {
+    const cached = readNasaCache<ApodFetchResult>(cacheKey, APOD_CACHE_TTL_MS);
+    if (cached) {
+      return {
+        ...cached.data,
+        source: 'cached',
+        fetchedAtIso: cached.cachedAtIso,
+        statusMessage: `Cached NASA APOD (${cached.data.record.date}).`,
+      };
+    }
   }
+
+  if (!options.forceRefresh && !normalizedDate && inFlightApodPromise) {
+    return inFlightApodPromise;
+  }
+
+  const runFetch = async (): Promise<ApodFetchResult> => {
+    const apiKey = getNasaApiKey();
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      MEDIA_FETCH_TIMEOUT_MS
+    );
+
+    try {
+      const primary = await requestSingleApod(
+        apiKey,
+        normalizedDate,
+        controller.signal
+      );
+
+      let resolvedRecord = primary.record;
+
+      // If today's default APOD returns 500/404/placeholder before daily publish,
+      // step back 1 UTC day once to fetch the latest valid NASA APOD (skip if 429).
+      if (
+        !resolvedRecord &&
+        !normalizedDate &&
+        primary.status !== 429 &&
+        (primary.status >= 500 || primary.status === 404 || primary.status === 200)
+      ) {
+        const yesterday = await requestSingleApod(
+          apiKey,
+          getYesterdayUtcDateString(),
+          controller.signal
+        );
+        resolvedRecord = yesterday.record;
+      }
+
+      if (!resolvedRecord) {
+        return {
+          source: 'archived',
+          record: ARCHIVED_APOD_FALLBACK,
+          statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
+          fetchedAtIso: new Date().toISOString(),
+        };
+      }
+
+      const liveResult: ApodFetchResult = {
+        source: 'live',
+        record: resolvedRecord,
+        statusMessage: `NASA APOD (${resolvedRecord.date}).`,
+        fetchedAtIso: new Date().toISOString(),
+      };
+      writeNasaCache(cacheKey, liveResult);
+      return liveResult;
+    } catch {
+      return {
+        source: 'archived',
+        record: ARCHIVED_APOD_FALLBACK,
+        statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
+        fetchedAtIso: new Date().toISOString(),
+      };
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  };
+
+  if (options.forceRefresh || normalizedDate) {
+    return runFetch();
+  }
+
+  const pending = runFetch().finally(() => {
+    inFlightApodPromise = null;
+  });
+  inFlightApodPromise = pending;
+  return pending;
 }
 
 export async function fetchMarsImageLibrary(
@@ -288,20 +389,31 @@ export async function fetchMarsImageLibrary(
     }
   }
 
-  const url = new URL('https://images-api.nasa.gov/search');
-  url.searchParams.set('q', selected.q);
-  url.searchParams.set('media_type', 'image');
-  url.searchParams.set('page_size', '8');
+  if (!options.forceRefresh) {
+    const existingPromise = inFlightImageQueries.get(cacheKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
+  }
 
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 8000);
+  const runFetch = async (): Promise<NasaImageLibraryResult> => {
+    const url = new URL('https://images-api.nasa.gov/search');
+    url.searchParams.set('q', selected.q);
+    url.searchParams.set('media_type', 'image');
+    url.searchParams.set('page_size', '6');
 
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      MEDIA_FETCH_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
 
     if (response.status === 429 || !response.ok) {
       const filteredFallback =
@@ -429,9 +541,20 @@ export async function fetchMarsImageLibrary(
       fetchedAtIso: new Date().toISOString(),
       queryLabel: selected.label,
     };
-  } finally {
-    globalThis.clearTimeout(timeoutId);
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  };
+
+  if (options.forceRefresh) {
+    return runFetch();
   }
+
+  const pending = runFetch().finally(() => {
+    inFlightImageQueries.delete(cacheKey);
+  });
+  inFlightImageQueries.set(cacheKey, pending);
+  return pending;
 }
 
 export async function fetchFeaturedMarsSurfaceDeck(): Promise<FeaturedMarsPhoto[]> {
@@ -483,4 +606,212 @@ export async function fetchFeaturedMarsSurfacePhoto(): Promise<FeaturedMarsPhoto
     dateCreated: 'Simulated Reference',
     missionTag: 'Mars Exploration',
   };
+}
+
+function buildArchivedRealtimeMarsFallback(): RealtimeMarsFeedResult {
+  return {
+    source: 'archived',
+    photos: [
+      {
+        id: 'ARCHIVED-MARS-SKY',
+        sol: null,
+        dateTaken: ARCHIVED_APOD_FALLBACK.date,
+        title: ARCHIVED_APOD_FALLBACK.title,
+        caption: ARCHIVED_APOD_FALLBACK.explanation,
+        fullCaption:
+          ARCHIVED_APOD_FALLBACK.fullExplanation ??
+          ARCHIVED_APOD_FALLBACK.explanation,
+        camera: 'Saved Mars Landscape Reference',
+        imageUrl: null,
+        hdUrl: null,
+        credit: ARCHIVED_APOD_FALLBACK.copyright ?? 'Educational Archive Reference',
+        link: null,
+      },
+    ],
+    statusMessage: UNAVAILABLE_FALLBACK_MESSAGE,
+    fetchedAtIso: new Date().toISOString(),
+  };
+}
+
+function formatMarsCameraName(rawInstrument: unknown): string {
+  const code = typeof rawInstrument === 'string' ? rawInstrument.trim().toUpperCase() : '';
+  if (!code) return 'Rover Surface Camera';
+  if (code.includes('NAVCAM')) return 'Navigation Camera (Navcam)';
+  if (code.includes('MASTCAM')) return 'Mastcam-Z Color Camera';
+  if (code.includes('HAZCAM')) return 'Hazard Avoidance Camera';
+  if (code.includes('SUPERCAM')) return 'SuperCam Micro-Imager';
+  if (code.includes('SHERLOC') || code.includes('WATSON')) return 'SHERLOC / WATSON Close-Up';
+  if (code.includes('PIXL')) return 'PIXL Rock Imager';
+  return code;
+}
+
+/**
+ * Fetches latest real-time raw photos from NASA's Perseverance Rover on Mars
+ * (mars.nasa.gov public JSON feed — no API key required), falling back to live
+ * NASA Image Library Mars photos if needed, and saved archive only when offline.
+ */
+export async function fetchRealtimeMarsRoverPhotos(
+  options: { forceRefresh?: boolean } = {}
+): Promise<RealtimeMarsFeedResult> {
+  const cacheKey = 'nasa_mars_realtime_latest';
+  if (!options.forceRefresh) {
+    const cached = readNasaCache<RealtimeMarsFeedResult>(
+      cacheKey,
+      REALTIME_MARS_CACHE_TTL_MS
+    );
+    if (cached && cached.data.photos.length > 0) {
+      return {
+        ...cached.data,
+        source: 'cached',
+        fetchedAtIso: cached.cachedAtIso,
+        statusMessage: `Cached NASA Mars Rover feed (${cached.cachedAtIso.slice(0, 10)}).`,
+      };
+    }
+  }
+
+  if (!options.forceRefresh && inFlightRealtimeMarsPromise) {
+    return inFlightRealtimeMarsPromise;
+  }
+
+  const runFetch = async (): Promise<RealtimeMarsFeedResult> => {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(
+      () => controller.abort(),
+      MEDIA_FETCH_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(
+        'https://mars.nasa.gov/rss/api/?feed=raw_images&category=mars2020&feedtype=json&num=6',
+        {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        }
+      );
+
+      if (response.ok) {
+        const payload = (await response.json()) as { images?: unknown[] };
+        const rawImages = Array.isArray(payload?.images) ? payload.images : [];
+        const parsed: RealtimeMarsPhoto[] = [];
+
+        for (const item of rawImages) {
+          if (!item || typeof item !== 'object') continue;
+          const rec = item as Record<string, unknown>;
+          const files =
+            rec.image_files && typeof rec.image_files === 'object'
+              ? (rec.image_files as Record<string, unknown>)
+              : {};
+          const imageUrl = sanitizeSafeHttpUrl(
+            files.medium ?? files.large ?? files.small ?? files.full_res
+          );
+          if (!imageUrl) continue;
+
+          const thumbUrl =
+            sanitizeSafeHttpUrl(files.small ?? files.medium) ?? imageUrl;
+          const hdUrl =
+            sanitizeSafeHttpUrl(files.large ?? files.full_res ?? files.medium) ??
+            imageUrl;
+          const camObj =
+            rec.camera && typeof rec.camera === 'object'
+              ? (rec.camera as Record<string, unknown>)
+              : {};
+          const solVal =
+            typeof rec.sol === 'number' && Number.isFinite(rec.sol)
+              ? rec.sol
+              : null;
+          const dateTaken =
+            typeof rec.date_taken_utc === 'string' && rec.date_taken_utc
+              ? rec.date_taken_utc.slice(0, 10)
+              : typeof rec.date_received === 'string'
+                ? rec.date_received.slice(0, 10)
+                : 'Latest Sol';
+          const rawCaption =
+            typeof rec.caption === 'string' && rec.caption.trim()
+              ? rec.caption.trim()
+              : 'Real image captured directly on Mars by NASA’s Perseverance rover.';
+          const title =
+            typeof rec.title === 'string' && rec.title.trim()
+              ? rec.title.trim()
+              : solVal !== null
+                ? `Mars Perseverance Sol ${solVal}`
+                : 'NASA Perseverance Live Mars View';
+
+          parsed.push({
+            id:
+              typeof rec.imageid === 'string' && rec.imageid
+                ? rec.imageid
+                : `MARS2020-${parsed.length}`,
+            sol: solVal,
+            dateTaken,
+            title,
+            caption: toOneSentence(rawCaption, 170),
+            fullCaption: cleanNasaDescription(rawCaption, 650),
+            camera: formatMarsCameraName(camObj.instrument),
+            imageUrl,
+            thumbUrl,
+            hdUrl,
+            credit:
+              typeof rec.credit === 'string' && rec.credit.trim()
+                ? rec.credit.trim()
+                : 'NASA/JPL-Caltech',
+            link: sanitizeSafeHttpUrl(rec.link),
+          });
+
+          if (parsed.length >= 4) break;
+        }
+
+        if (parsed.length > 0) {
+          const liveResult: RealtimeMarsFeedResult = {
+            source: 'live',
+            photos: parsed,
+            statusMessage: `Loaded ${parsed.length} live Perseverance Mars photo(s).`,
+            fetchedAtIso: new Date().toISOString(),
+          };
+          writeNasaCache(cacheKey, liveResult);
+          return liveResult;
+        }
+      }
+    } catch {
+      // Fall through to images-api.nasa.gov Mars backup
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+
+    // Secondary live fallback: NASA Image & Video Library (also no API key required)
+    const libBackup = await fetchMarsImageLibrary('Perseverance', options);
+    const liveLibPhotos = libBackup.items.filter((i) => Boolean(i.imageUrl));
+    if (libBackup.source !== 'archived' && liveLibPhotos.length > 0) {
+      return {
+        source: libBackup.source,
+        photos: liveLibPhotos.slice(0, 4).map((item) => ({
+          id: item.nasaId,
+          sol: null,
+          dateTaken: item.dateCreated,
+          title: item.title,
+          caption: item.description,
+          fullCaption: item.fullDescription ?? item.description,
+          camera: item.missionTag,
+          imageUrl: item.imageUrl,
+          hdUrl: item.imageUrl,
+          credit: item.center ? `NASA (${item.center})` : 'NASA/JPL-Caltech',
+          link: `https://images.nasa.gov/details/${encodeURIComponent(item.nasaId)}`,
+        })),
+        statusMessage: libBackup.statusMessage,
+        fetchedAtIso: new Date().toISOString(),
+      };
+    }
+
+    return buildArchivedRealtimeMarsFallback();
+  };
+
+  if (options.forceRefresh) {
+    return runFetch();
+  }
+
+  const pending = runFetch().finally(() => {
+    inFlightRealtimeMarsPromise = null;
+  });
+  inFlightRealtimeMarsPromise = pending;
+  return pending;
 }

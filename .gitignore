@@ -4,5 +4,13 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+*.tsbuildinfo
+
+# Environment variables & API keys (keep .env.example public with empty placeholders)
+.env
+.env.*
 !.env.example
+*.key
+*.pem
+*secret*
+.vercel

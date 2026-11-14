@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  AlertTriangle,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -31,49 +32,49 @@ const GREENHOUSE_ACTIONS: {
 }[] = [
   {
     id: 'maintain-equipment',
-    label: 'Maintain Greenhouse Equipment',
-    benefit: '+14% Greenhouse Health · +2% Life Support',
+    label: 'Check Pumps & Grow Lights',
+    benefit: '+14% Plant Health · +2% Air & Water',
     cost: '-5% Power · -4% Crew Energy',
     icon: Wrench,
   },
   {
     id: 'allocate-power',
-    label: 'Allocate Power to Plant Growth',
-    benefit: '+30% Crop Growth · +4% Health · +3% Life Support',
-    cost: '-8% Power (Boosts Grow Lights)',
+    label: 'Boost Grow Lights',
+    benefit: '+30% Plant Growth · +4% Health · +3% Air',
+    cost: '-8% Power (Brightens LED Lights)',
     icon: Zap,
   },
   {
     id: 'repair-irrigation',
-    label: 'Repair Irrigation Systems',
-    benefit: 'Flowing Irrigation · +18% Water · +6% Health',
-    cost: '-4% Radiation Shielding · -4% Power · -4% Crew Energy',
+    label: 'Unclog Water Pipes',
+    benefit: 'Smooth Water Flow · +18% Water · +6% Health',
+    cost: '-4% Shield Water · -4% Power · -4% Crew Energy',
     icon: Droplets,
   },
   {
     id: 'harvest-crops',
-    label: 'Harvest Available Crops',
-    benefit: '+18% Food Reserves · +8% Life Support',
-    cost: 'Requires 100% Growth · -10% Water · -3% Power · -5% Crew Energy',
+    label: 'Harvest Fresh Food',
+    benefit: '+18% Food Supply · +8% Life Support',
+    cost: 'Needs 100% Growth · -10% Water · -3% Power · -5% Energy',
     icon: Wheat,
   },
 ];
 
 const GREENHOUSE_SCIENCE_LESSONS = [
   {
-    question: 'Why not plant seeds straight into Martian dirt?',
+    question: 'Why not plant seeds straight into Mars dirt?',
     answer:
-      'Martian dirt has salty perchlorates that harm plants, so crews grow crops indoors in clean nutrient water (hydroponics).',
+      'Mars dirt has salty chemicals that hurt plants, so astronauts grow food indoors using clean water and nutrients (hydroponics).',
   },
   {
-    question: 'Why do Mars greenhouses need so much power?',
+    question: 'Why do Mars greenhouses need so much electricity?',
     answer:
-      'Mars averages -53°C outside, so LED grow lights, heaters, and water pumps share battery power.',
+      'Mars nights drop far below freezing, so heaters, water pumps, and bright grow lights all run on battery power.',
   },
   {
-    question: 'Why is stored Earth food still needed?',
+    question: 'Why do astronauts still bring packaged food from Earth?',
     answer:
-      'Crops take time to grow, so stored rations feed the crew safely during dust storms.',
+      'Vegetables take days to sprout and ripen, so stored Earth meals keep the crew fed during dust storms.',
   },
 ];
 
@@ -120,54 +121,174 @@ export function GreenhousePanel({
 
         <span
           className={`text-xs font-semibold font-mono-tabular ${
-            greenhouse.harvestReadiness ? 'text-[#29B6F6]' : 'text-[#A8B6CC]'
+            greenhouse.cropsSpoiled
+              ? 'text-[#E4774E]'
+              : greenhouse.harvestReadiness
+                ? 'text-[#29B6F6]'
+                : 'text-[#A8B6CC]'
           }`}
         >
-          {greenhouse.harvestReadiness
-            ? '● Harvest Ready'
-            : `Stage: ${greenhouse.cropGrowthStage}`}
+          {greenhouse.cropsSpoiled
+            ? '✖ Crops Spoiled'
+            : greenhouse.harvestReadiness
+              ? '● Harvest Ready'
+              : `Stage: ${greenhouse.cropGrowthStage}`}
         </span>
       </div>
 
-      {/* 7 Required Greenhouse Telemetry Metrics */}
+      {/* Frost / Crop Spoilage Alert Banner */}
+      {(greenhouse.cropsSpoiled || greenhouse.lowPowerStreak >= 1 || resources.power < 25) && (
+        <div
+          role="alert"
+          className={`rounded-lg bg-[#080D1B] border p-3.5 flex items-start gap-2.5 ${
+            greenhouse.cropsSpoiled ? 'border-[#E4774E]' : 'border-[#FFB547]'
+          }`}
+        >
+          <AlertTriangle
+            className={`w-4 h-4 shrink-0 mt-0.5 ${
+              greenhouse.cropsSpoiled ? 'text-[#E4774E]' : 'text-[#FFB547]'
+            }`}
+          />
+          <div className="text-xs leading-relaxed">
+            {greenhouse.cropsSpoiled ? (
+              <p className="text-[#EAF2FF]">
+                <strong className="text-[#E4774E]">Crops Spoiled:</strong> Frozen pipes
+                or prolonged low power ruined this harvest. Use{' '}
+                <strong>Clear Spoiled Crops &amp; Re-seed</strong> below to plant fresh
+                seedlings.
+              </p>
+            ) : (
+              <p className="text-[#EAF2FF]">
+                <strong className="text-[#FFB547]">Frost Risk: Power &lt; 25%:</strong>{' '}
+                {greenhouse.lowPowerStreak >= 1
+                  ? 'Another low-power night (<25%) will freeze pipes and spoil all crops.'
+                  : 'Raise Power to at least 25% before nightfall to protect greenhouse heaters.'}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4 Simple Greenhouse Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Food Reserves</p>
+          <p className="text-xs text-[#A8B6CC]">Food Supply</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#EAF2FF]">
             {resources.foodReserves}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Greenhouse Health</p>
+          <p className="text-xs text-[#A8B6CC]">Plant Health</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#EAF2FF]">
             {greenhouse.health}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Water Availability</p>
+          <p className="text-xs text-[#A8B6CC]">Water Tank</p>
           <p className="mt-1 font-mono-tabular text-lg font-bold text-[#29B6F6]">
             {greenhouse.waterAvailability}%
           </p>
         </div>
 
         <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-3">
-          <p className="text-xs text-[#A8B6CC]">Power Draw</p>
+          <p className="text-xs text-[#A8B6CC]">Electricity Used</p>
           <p className="mt-1 font-mono-tabular text-sm sm:text-base font-bold text-[#FFB547]">
             {greenhouse.powerConsumption}
           </p>
         </div>
       </div>
 
-      {/* Crop Growth Stage + Irrigation + Harvest Readiness Strip */}
+      {/* Visual Plant Tray + Crop Growth Bar */}
       <div className="rounded-lg bg-[#080D1B] border border-[#293A54] p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="font-medium text-[#EAF2FF]">
-            Crop Growth Stage:{' '}
-            <strong className="text-[#29B6F6]">{greenhouse.cropGrowthStage}</strong>
-          </span>
-          <span className="font-mono-tabular text-[#EAF2FF]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <svg
+              viewBox="0 0 74 36"
+              className="w-[74px] h-[36px] shrink-0 rounded bg-[#0B172A] border border-[#293A54]"
+              aria-hidden="true"
+            >
+              {/* LED light bar */}
+              <line
+                x1="8"
+                y1="6"
+                x2="66"
+                y2="6"
+                stroke={
+                  greenhouse.cropsSpoiled
+                    ? '#E4774E'
+                    : resources.power < 25
+                      ? '#FFB547'
+                      : '#6FE3FF'
+                }
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              {/* Soil tray */}
+              <rect x="8" y="27" width="58" height="5" rx="2" fill="#233754" />
+              {/* Three sprouts reflecting current plant state */}
+              {[20, 37, 54].map((cx) => (
+                <g key={cx}>
+                  <line
+                    x1={cx}
+                    y1="27"
+                    x2={cx}
+                    y2={greenhouse.cropsSpoiled ? '21' : '15'}
+                    stroke={greenhouse.cropsSpoiled ? '#9A3412' : '#34D399'}
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                  <ellipse
+                    cx={cx - 4}
+                    cy={greenhouse.cropsSpoiled ? 22 : 17}
+                    rx="4"
+                    ry="2.2"
+                    fill={
+                      greenhouse.cropsSpoiled
+                        ? '#B94A32'
+                        : resources.power < 25
+                          ? '#93C5FD'
+                          : '#34D399'
+                    }
+                  />
+                  <ellipse
+                    cx={cx + 4}
+                    cy={greenhouse.cropsSpoiled ? 22 : 16}
+                    rx="4"
+                    ry="2.2"
+                    fill={
+                      greenhouse.cropsSpoiled
+                        ? '#E4774E'
+                        : resources.power < 25
+                          ? '#60A5FA'
+                          : '#2DD4BF'
+                    }
+                  />
+                </g>
+              ))}
+            </svg>
+            <div className="text-xs">
+              <span className="font-medium text-[#EAF2FF]">
+                Plant Stage:{' '}
+                <strong
+                  className={
+                    greenhouse.cropsSpoiled ? 'text-[#E4774E]' : 'text-[#29B6F6]'
+                  }
+                >
+                  {greenhouse.cropGrowthStage}
+                </strong>
+              </span>
+              <p className="text-[11px] text-[#A8B6CC]">
+                {greenhouse.cropsSpoiled
+                  ? 'Frozen crops — clear tray and plant new seeds'
+                  : resources.power < 25
+                    ? 'Cold warning: keep Power at 25%+ so heaters stay on'
+                    : 'Warm LED lights helping crops grow'}
+              </p>
+            </div>
+          </div>
+          <span className="font-mono-tabular text-xs font-bold text-[#EAF2FF]">
             {greenhouse.cropGrowthProgress}% / 100%
           </span>
         </div>
@@ -181,30 +302,72 @@ export function GreenhousePanel({
           aria-label={`Crop growth ${greenhouse.cropGrowthProgress} percent`}
         >
           <div
-            className="h-full bg-[#29B6F6] transition-all duration-300"
-            style={{ width: `${greenhouse.cropGrowthProgress}%` }}
+            className={`h-full transition-all duration-300 ${
+              greenhouse.cropsSpoiled ? 'bg-[#E4774E]' : 'bg-[#29B6F6]'
+            }`}
+            style={{
+              width: `${greenhouse.cropsSpoiled ? 100 : greenhouse.cropGrowthProgress}%`,
+            }}
           />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
           <span className="text-[#A8B6CC]">
-            Irrigation Status:{' '}
+            Water Pipes:{' '}
             <strong className={irrigationColor}>{greenhouse.irrigationStatus}</strong>
           </span>
           <span className="text-[#A8B6CC]">
-            Harvest Readiness:{' '}
+            Harvest:{' '}
             <strong
               className={
-                greenhouse.harvestReadiness ? 'text-[#29B6F6]' : 'text-[#EAF2FF]'
+                greenhouse.cropsSpoiled
+                  ? 'text-[#E4774E]'
+                  : greenhouse.harvestReadiness
+                    ? 'text-[#29B6F6]'
+                    : 'text-[#EAF2FF]'
               }
             >
-              {greenhouse.harvestReadiness
-                ? 'Ready to Harvest'
-                : `${100 - greenhouse.cropGrowthProgress}% growth remaining`}
+              {greenhouse.cropsSpoiled
+                ? 'Needs Re-seeding'
+                : greenhouse.harvestReadiness
+                  ? 'Ready Now!'
+                  : `${100 - greenhouse.cropGrowthProgress}% more to grow`}
             </strong>
           </span>
         </div>
       </div>
+
+      {/* Emergency Recovery Action when Crops Are Spoiled */}
+      {greenhouse.cropsSpoiled && (
+        <button
+          type="button"
+          disabled={
+            !canInteract ||
+            actionsRemaining === 0 ||
+            greenhouse.actionsUsedThisSol.includes('reseed-crops')
+          }
+          onClick={() => onGreenhouseAction('reseed-crops')}
+          className="w-full text-left rounded-lg bg-[#080D1B] hover:bg-[#1E3353]/70 disabled:opacity-50 disabled:cursor-not-allowed border border-[#E4774E] hover:border-[#29B6F6] p-3.5 transition-colors cursor-pointer"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sprout className="w-4 h-4 text-[#E4774E] shrink-0" />
+              <span className="text-xs sm:text-sm font-semibold text-[#EAF2FF]">
+                Clear Spoiled Crops &amp; Re-seed
+              </span>
+            </div>
+            <span className="text-xs font-mono-tabular text-[#E4774E] shrink-0">
+              Recovery Action
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-[#29B6F6]">
+            Clears frozen biomass · +15% Seedling Growth · +10% Greenhouse Health
+          </p>
+          <p className="mt-0.5 text-xs text-[#FFB547]">
+            Trade-off: -6% Power · -8% Water · -6% Crew Energy
+          </p>
+        </button>
+      )}
 
       {/* Four Interactive Greenhouse Actions */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -212,7 +375,10 @@ export function GreenhousePanel({
           const IconComponent = action.icon;
           const alreadyUsed = greenhouse.actionsUsedThisSol.includes(action.id);
           const unreadyHarvest =
-            action.id === 'harvest-crops' && !greenhouse.harvestReadiness;
+            action.id === 'harvest-crops' &&
+            (!greenhouse.harvestReadiness || greenhouse.cropsSpoiled);
+          const spoiledBoost =
+            action.id === 'allocate-power' && greenhouse.cropsSpoiled;
           const lowPowerBoost =
             action.id === 'allocate-power' && resources.power < 15;
           const disabled =
@@ -220,6 +386,7 @@ export function GreenhousePanel({
             alreadyUsed ||
             actionsRemaining === 0 ||
             unreadyHarvest ||
+            spoiledBoost ||
             lowPowerBoost;
 
           return (
@@ -251,10 +418,17 @@ export function GreenhousePanel({
 
               {unreadyHarvest && (
                 <p className="mt-1.5 text-xs text-[#A8B6CC]">
-                  Locked until crops reach 100% Harvest Ready.
+                  {greenhouse.cropsSpoiled
+                    ? 'Locked while crops are spoiled — re-seed first.'
+                    : 'Locked until crops reach 100% Harvest Ready.'}
                 </p>
               )}
-              {lowPowerBoost && (
+              {spoiledBoost && (
+                <p className="mt-1.5 text-xs text-[#E4774E]">
+                  Clear spoiled crops and re-seed before boosting grow lights.
+                </p>
+              )}
+              {!spoiledBoost && lowPowerBoost && (
                 <p className="mt-1.5 text-xs text-[#E4774E]">
                   Needs at least 15% Power reserve to boost lights.
                 </p>

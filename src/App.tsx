@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AboutPage } from './components/AboutPage';
-import { AchievementCelebration } from './components/AchievementCelebration';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { HomePage } from './components/HomePage';
-import { LearnPage } from './components/LearnPage';
 import { MedalsGuideModal } from './components/MedalsGuideModal';
-import { MissionSimulator } from './components/MissionSimulator';
 import { Navbar } from './components/Navbar';
-import { ObservatoryPage } from './components/ObservatoryPage';
 import {
   advanceToNextSol,
   applyDecision,
@@ -14,6 +9,7 @@ import {
   applyPowerAction,
   applyShelterAction,
   buildMissionReport,
+  configureBriefingMission,
   createInitialGameState,
   markCommunicationUsed,
   proceedToSolSummary,
@@ -21,13 +17,16 @@ import {
   startMission,
   togglePause,
 } from './engine/gameEngine';
+import { clearNasaCache } from './services/nasaCache';
 import {
   AppRoute,
   DetailedEarthReport,
   GameState,
   GreenhouseActionId,
+  LandingSiteId,
   PowerActionId,
   ShelterActionId,
+  SpaceWeatherMode,
 } from './types/mission';
 import {
   EXPLORER_BADGES,
@@ -38,9 +37,50 @@ import {
   recordShelterAction,
   recordSolCompleted,
   recordTacticalDecision,
+  resetExplorerProgress,
   subscribeExplorerProgress,
 } from './utils/explorerProgress';
 import { clearGameState, loadGameState, saveGameState } from './utils/storage';
+
+const AboutPage = lazy(() =>
+  import('./components/AboutPage').then((m) => ({ default: m.AboutPage }))
+);
+const AchievementCelebration = lazy(() =>
+  import('./components/AchievementCelebration').then((m) => ({
+    default: m.AchievementCelebration,
+  }))
+);
+const LearnPage = lazy(() =>
+  import('./components/LearnPage').then((m) => ({ default: m.LearnPage }))
+);
+const MissionSimulator = lazy(() =>
+  import('./components/MissionSimulator').then((m) => ({
+    default: m.MissionSimulator,
+  }))
+);
+const ObservatoryPage = lazy(() =>
+  import('./components/ObservatoryPage').then((m) => ({
+    default: m.ObservatoryPage,
+  }))
+);
+
+const ROUTE_TITLES: Record<AppRoute, string> = {
+  home: 'Outpost Zero — Blast Off to Something New',
+  simulator: 'Outpost Zero — 10-Sol Mars Mission Simulator',
+  learn: 'Outpost Zero — Mars Science & Quiz Hub',
+  observatory: 'Outpost Zero — NASA & Space Observatory',
+  about: 'Outpost Zero — About the Project',
+};
+
+function RouteLoadingFallback() {
+  return (
+    <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="rounded-xl bg-[#111C32] border border-[#293A54] p-6 text-center text-sm text-[#29B6F6]">
+        Loading Outpost Zero module...
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>('home');
@@ -62,6 +102,10 @@ export default function App() {
   useEffect(() => {
     return subscribeExplorerProgress(setExplorerProgress);
   }, []);
+
+  useEffect(() => {
+    document.title = ROUTE_TITLES[route];
+  }, [route]);
 
   const handleNavigate = useCallback(
     (nextRoute: AppRoute) => {
@@ -198,6 +242,25 @@ export default function App() {
     setGameState(createInitialGameState());
   }, []);
 
+  const handleFullDemoReset = useCallback(() => {
+    clearGameState();
+    clearNasaCache();
+    resetExplorerProgress();
+    setGameState(createInitialGameState());
+  }, []);
+
+  const handleConfigureMission = useCallback(
+    (config: {
+      landingSite?: LandingSiteId;
+      spaceWeatherMode?: SpaceWeatherMode;
+      liveSpaceWeatherLabel?: string;
+      customSeed?: number;
+    }) => {
+      setGameState((prev) => configureBriefingMission(prev, config));
+    },
+    []
+  );
+
   const hasActiveMission =
     gameState.phase !== 'briefing' && gameState.phase !== 'report';
 
@@ -223,61 +286,70 @@ export default function App() {
           />
         )}
 
-        {route === 'simulator' && (
-          <MissionSimulator
-            gameState={gameState}
-            onStartMission={handleStartMission}
-            onSelectDecision={handleSelectDecision}
-            onGreenhouseAction={handleGreenhouseAction}
-            onPowerAction={handlePowerAction}
-            onShelterAction={handleShelterAction}
-            onSendDetailedReport={handleSendDetailedReport}
-            onProceedToSummary={handleProceedToSummary}
-            onAdvanceNextSol={handleAdvanceNextSol}
-            onTogglePause={handleTogglePause}
-            onReplayMission={handleReplayMission}
-            onMarkCommUsed={handleMarkCommUsed}
-            onNavigate={handleNavigate}
-            previousRoute={previousRoute}
-            onGoBack={handleGoBack}
-          />
-        )}
+        <Suspense fallback={<RouteLoadingFallback />}>
+          {route === 'simulator' && (
+            <MissionSimulator
+              gameState={gameState}
+              explorerProgress={explorerProgress}
+              onStartMission={handleStartMission}
+              onConfigureMission={handleConfigureMission}
+              onSelectDecision={handleSelectDecision}
+              onGreenhouseAction={handleGreenhouseAction}
+              onPowerAction={handlePowerAction}
+              onShelterAction={handleShelterAction}
+              onSendDetailedReport={handleSendDetailedReport}
+              onProceedToSummary={handleProceedToSummary}
+              onAdvanceNextSol={handleAdvanceNextSol}
+              onTogglePause={handleTogglePause}
+              onReplayMission={handleReplayMission}
+              onFullDemoReset={handleFullDemoReset}
+              onMarkCommUsed={handleMarkCommUsed}
+              onNavigate={handleNavigate}
+              previousRoute={previousRoute}
+              onGoBack={handleGoBack}
+            />
+          )}
 
-        {route === 'learn' && (
-          <LearnPage
-            onNavigate={handleNavigate}
-            previousRoute={previousRoute}
-            onGoBack={handleGoBack}
-          />
-        )}
+          {route === 'learn' && (
+            <LearnPage
+              onNavigate={handleNavigate}
+              previousRoute={previousRoute}
+              onGoBack={handleGoBack}
+            />
+          )}
 
-        {route === 'observatory' && (
-          <ObservatoryPage
-            onNavigate={handleNavigate}
-            previousRoute={previousRoute}
-            onGoBack={handleGoBack}
-          />
-        )}
+          {route === 'observatory' && (
+            <ObservatoryPage
+              onNavigate={handleNavigate}
+              previousRoute={previousRoute}
+              onGoBack={handleGoBack}
+            />
+          )}
 
-        {route === 'about' && (
-          <AboutPage
-            onNavigate={handleNavigate}
-            previousRoute={previousRoute}
-            onGoBack={handleGoBack}
-          />
-        )}
+          {route === 'about' && (
+            <AboutPage
+              onNavigate={handleNavigate}
+              previousRoute={previousRoute}
+              onGoBack={handleGoBack}
+            />
+          )}
+        </Suspense>
       </div>
 
-      <MedalsGuideModal
-        isOpen={medalsModalOpen}
-        progress={explorerProgress}
-        onClose={() => setMedalsModalOpen(false)}
-        onNavigate={handleNavigate}
-      />
+      <Suspense fallback={null}>
+        {medalsModalOpen && (
+          <MedalsGuideModal
+            isOpen={medalsModalOpen}
+            progress={explorerProgress}
+            onClose={() => setMedalsModalOpen(false)}
+            onNavigate={handleNavigate}
+          />
+        )}
 
-      <AchievementCelebration
-        onOpenMedalsGuide={() => setMedalsModalOpen(true)}
-      />
+        <AchievementCelebration
+          onOpenMedalsGuide={() => setMedalsModalOpen(true)}
+        />
+      </Suspense>
     </div>
   );
 }

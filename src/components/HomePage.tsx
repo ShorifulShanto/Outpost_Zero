@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Compass,
   HeartPulse,
+  Rocket,
   Shield,
   Zap,
 } from 'lucide-react';
@@ -70,19 +71,19 @@ const MARS_HAZARD_DECK: HazardDeckItem[] = [
     id: 'dust',
     label: 'Dust Storms',
     challenge:
-      'Fine rusty dust coats solar panels and cuts sunlight when Martian winds pick up.',
+      'Red dust coats your solar panels like powder and blocks sunlight from charging batteries.',
     solution:
-      'Clean solar wings regularly and keep battery reserves above 35% before storm fronts arrive.',
+      'Brush dust off panels when winds calm down and keep batteries above 35%.',
     targetRoute: 'simulator',
-    ctaLabel: 'Manage Solar Power',
+    ctaLabel: 'See Solar Dust in Action',
   },
   {
     id: 'streaks',
-    label: 'Slope Streaks',
+    label: 'Steep Slopes',
     challenge:
-      'Thick dust blankets slide down steep crater walls, forming dark streaks and tricky rover paths.',
+      'Loose dust slides down steep crater hills, making rover driving bumpy and risky.',
     solution:
-      'Place habitats on flat basin floors like Jezero Crater and inspect NASA surface photos first.',
+      'Build your base on flat crater ground like Jezero and check NASA photos first.',
     targetRoute: 'observatory',
     ctaLabel: 'Explore Surface Photos',
   },
@@ -90,54 +91,54 @@ const MARS_HAZARD_DECK: HazardDeckItem[] = [
     id: 'radiation',
     label: 'Solar Flares',
     challenge:
-      'Mars lacks a global magnetic field, so solar flares send radiation bursts to the surface.',
+      'Mars has no strong magnetic shield, so solar storms send fast space rays to the ground.',
     solution:
-      'Water-filled dome walls and packed Martian soil absorb high-energy particles inside the shelter.',
+      'Water-filled dome walls and packed Mars dirt keep astronauts safe inside the shelter.',
     targetRoute: 'observatory',
-    ctaLabel: 'Check Live Solar Storms',
+    ctaLabel: 'Check Solar Storms',
   },
   {
     id: 'cold',
     label: '-63°C Nights',
     challenge:
-      'Average surface temperatures plunge far below freezing every single Martian night.',
+      'Every Martian night gets colder than Antarctica, freezing pipes if heaters shut off.',
     solution:
-      'Insulated airlocks and greenhouse heat exchangers share power so crops and crew stay warm.',
+      'Keep Power above 25% so greenhouse heaters and airlock doors stay warm.',
     targetRoute: 'learn',
-    ctaLabel: 'Read Thermal Lesson',
+    ctaLabel: 'Read Cold-Mars Lesson',
   },
 ];
 
 const FEATURED_TOPICS = [
   {
     id: 'life-support',
-    title: 'Life Support',
-    subtitle: 'Oxygen · Water · Food',
+    title: 'Air, Water & Food',
+    subtitle: 'Oxygen · Clean Water · Veggies',
     watermark: 'Data: NASA OSDR · Resource: CSA',
     icon: HeartPulse,
     accentColor: '#29B6F6',
     description:
-      'Clean air scrubbers, recycled water, and hydroponic greens keep your four astronauts healthy.',
+      'Air filters clean crew breath, tanks recycle every drop of water, and indoor greens grow fresh food.',
   },
   {
     id: 'power',
-    title: 'Power',
-    subtitle: 'Solar · Batteries · Heat',
+    title: 'Sunlight & Batteries',
+    subtitle: 'Solar Panels · Dust · Heat',
     watermark: 'Data: Mars Trek',
     icon: Zap,
     accentColor: '#FFB547',
     description:
-      'Martian sunlight is weaker and dusty. Batteries keep cabin heaters and air systems running.',
+      'Mars sunlight is weak and dusty. Clean solar wings and strong batteries keep heaters running all night.',
   },
   {
     id: 'radiation',
-    title: 'Radiation',
-    subtitle: 'Solar Storms · Shelter',
+    title: 'Storm Shielding',
+    subtitle: 'Water Walls · Safe Shelter',
     watermark: 'Data: NASA DONKI / RadLab',
     icon: Shield,
     accentColor: '#E4774E',
     description:
-      'Water walls and packed Martian soil shield your crew when solar storms send radiation bursts.',
+      'Water tanks and packed Mars soil block harmful space rays whenever a solar storm hits.',
   },
 ];
 
@@ -182,12 +183,19 @@ export function HomePage({
             alt={
               usingLiveHeroPhoto
                 ? marsPhoto?.title ?? 'Mars surface terrain photographed by NASA'
-                : 'Simulated Martian Jezero Crater horizon'
+                : 'AI-generated Martian Jezero Crater horizon'
             }
+            decoding="async"
+            fetchPriority="low"
             referrerPolicy="no-referrer"
             onError={() => setHeroImgFailed(true)}
             className="absolute inset-0 w-full h-full object-cover opacity-25 pointer-events-none select-none"
           />
+          {!usingLiveHeroPhoto && (
+            <div className="absolute bottom-2.5 right-3 z-10 pointer-events-none">
+              <CornerWatermark label="AI-Generated Image · Saved" />
+            </div>
+          )}
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-gradient-to-b from-[#080D1B]/85 via-[#080D1B]/72 to-[#080D1B] pointer-events-none"
@@ -205,11 +213,14 @@ export function HomePage({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
               {/* Left Copy Column */}
               <div className="lg:col-span-6 flex flex-col justify-center">
-                <p className="text-xs sm:text-sm font-medium text-[#29B6F6]">
-                  Outpost Zero · Explore. Build. Survive. Discover.
-                </p>
+                <div className="inline-flex items-center gap-2">
+                  <Rocket className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E4774E] shrink-0" aria-hidden="true" />
+                  <p className="text-xs sm:text-sm font-medium uppercase tracking-[0.14em] text-[#E4774E]">
+                    Blast Off to Something New
+                  </p>
+                </div>
 
-                <h1 className="mt-3 font-display text-3xl sm:text-5xl font-bold tracking-tight text-[#EAF2FF] leading-[1.12] [text-wrap:balance]">
+                <h1 className="mt-2.5 font-display text-3xl sm:text-5xl font-bold tracking-tight text-[#EAF2FF] leading-[1.12] [text-wrap:balance]">
                   Command Mars. Keep Your Crew Alive.
                 </h1>
 
@@ -252,15 +263,11 @@ export function HomePage({
                   </button>
                 </div>
 
-                <div className="mt-6">
-                  <CornerWatermark
-                    label={
-                      usingLiveHeroPhoto
-                        ? 'Backdrop: NASA Image Library'
-                        : 'Backdrop: Simulated Mars Terrain'
-                    }
-                  />
-                </div>
+                {usingLiveHeroPhoto && (
+                  <div className="mt-6">
+                    <CornerWatermark label="Backdrop: NASA Image Library" />
+                  </div>
+                )}
               </div>
 
               {/* Right Interactive 3D-Style Habitat Schematic + Clickable Mars Surface View */}

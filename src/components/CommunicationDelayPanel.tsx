@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -6,6 +6,8 @@ import {
   FileText,
   Radio,
   Send,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
   CommunicationAdvice,
@@ -15,6 +17,11 @@ import {
   MissionEvent,
   ResourceState,
 } from '../types/mission';
+import {
+  getEarthMarsTelemetry,
+  playRadioChirp,
+} from '../utils/orbitalTelemetry';
+import { InfoHoverTip } from './InfoHoverTip';
 
 interface CommunicationDelayPanelProps {
   currentSol: number;
@@ -50,6 +57,7 @@ export function CommunicationDelayPanel({
   const [status, setStatus] = useState<'idle' | 'transmitting' | 'received'>('idle');
   const [secondsLeft, setSecondsLeft] = useState<number>(DELAY_SECONDS);
   const [reportOpen, setReportOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   const [problemDetected, setProblemDetected] = useState('');
   const [actionsTaken, setActionsTaken] = useState('');
@@ -57,6 +65,7 @@ export function CommunicationDelayPanel({
     'Confirm autonomous checklist steps and space-weather outlook.'
   );
 
+  const orbitalTelemetry = useMemo(() => getEarthMarsTelemetry(), []);
   const eventId = activeEvent?.id ?? null;
   const reportSentThisSol = commSystem.reportsSent.some(
     (r) => r.sol === currentSol
@@ -84,6 +93,9 @@ export function CommunicationDelayPanel({
 
     if (secondsLeft <= 0) {
       setStatus('received');
+      if (soundEnabled) {
+        playRadioChirp('receive');
+      }
       onTransmissionStateChange?.(false);
       onAdviceReceived();
       return;
@@ -94,7 +106,14 @@ export function CommunicationDelayPanel({
     }, 500);
 
     return () => window.clearTimeout(timer);
-  }, [status, secondsLeft, isPaused, onAdviceReceived, onTransmissionStateChange]);
+  }, [
+    status,
+    secondsLeft,
+    isPaused,
+    soundEnabled,
+    onAdviceReceived,
+    onTransmissionStateChange,
+  ]);
 
   const handleRequestAdvice = () => {
     if (
@@ -104,6 +123,9 @@ export function CommunicationDelayPanel({
       status === 'received'
     ) {
       return;
+    }
+    if (soundEnabled) {
+      playRadioChirp('send');
     }
     setSecondsLeft(DELAY_SECONDS);
     setStatus('transmitting');
@@ -116,7 +138,7 @@ export function CommunicationDelayPanel({
 
     onSendDetailedReport({
       problemDetected:
-        problemDetected.trim() || activeEvent?.title || 'Outpost telemetry alert',
+        problemDetected.trim() || activeEvent?.title || 'Outpost status alert',
       actionsTaken:
         actionsTaken.trim() || 'Initial diagnostics and safety checks running.',
       remainingResources: `Life Support ${resources.lifeSupport}%, Power ${resources.power}%, Radiation ${resources.radiationProtection}%`,
@@ -141,21 +163,42 @@ export function CommunicationDelayPanel({
         <div className="w-9 h-9 rounded-lg bg-[#080D1B] border border-[#293A54] flex items-center justify-center shrink-0">
           <Radio className="w-4 h-4 text-[#29B6F6]" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-display text-sm sm:text-base font-semibold text-[#EAF2FF]">
               Earth Mission Control Link
             </h3>
-            <span className="font-mono-tabular text-xs font-semibold text-[#29B6F6]">
-              {commSystem.oneWayDelayMinutes} min one-way (~{roundTripMinutes} min Q&amp;A)
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono-tabular text-xs font-semibold text-[#29B6F6]">
+                {commSystem.oneWayDelayMinutes} min one-way (~{roundTripMinutes} min Q&amp;A)
+              </span>
+              <button
+                type="button"
+                onClick={() => setSoundEnabled((prev) => !prev)}
+                aria-label={soundEnabled ? 'Mute radio chirp' : 'Unmute radio chirp'}
+                title={soundEnabled ? 'Radio chirp on' : 'Radio chirp muted'}
+                className="w-7 h-7 rounded-md bg-[#080D1B] border border-[#293A54] hover:border-[#29B6F6] text-[#A8B6CC] hover:text-[#EAF2FF] flex items-center justify-center cursor-pointer transition-colors"
+              >
+                {soundEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5 text-[#29B6F6]" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           </div>
-          <p className="mt-1 text-xs text-[#A8B6CC] leading-relaxed">
-            Radio waves travel at light speed, yet changing Earth–Mars distance causes{' '}
-            <strong className="text-[#EAF2FF]">~3–22 min one-way</strong> delays (
-            <strong className="text-[#EAF2FF]">~6–44 min round-trip</strong>). Keep
-            managing Outpost Zero while signals travel!
-          </p>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="font-mono-tabular text-[11px] text-[#29B6F6]/90">
+              Today: {orbitalTelemetry.distanceMillionKm}M km ·{' '}
+              {orbitalTelemetry.oneWayLightMinutes} min light-time
+            </p>
+            <InfoHoverTip
+              label="Why the wait?"
+              title="Why Radio Signals Take Minutes"
+              body="Radio messages travel at light speed, yet Mars is millions of km away—taking 3–22 minutes each way. Keep running your base while signals travel!"
+              accent="blue"
+            />
+          </div>
         </div>
       </div>
 
@@ -167,9 +210,9 @@ export function CommunicationDelayPanel({
         >
           <AlertTriangle className="w-4 h-4 text-[#FFB547] shrink-0 mt-0.5" />
           <p className="text-xs text-[#EAF2FF]/95 leading-relaxed">
-            <strong className="text-[#FFB547]">Solar Conjunction Active:</strong> The Sun
-            is near Earth–Mars line of sight, degrading or blocking live signals. Follow
-            approved autonomous crew checklists first.
+            <strong className="text-[#FFB547]">Sun Blocks Radio Signal:</strong> The Sun
+            is between Earth and Mars, making live radio noisy. Follow your onboard safety
+            checklists first!
           </p>
         </div>
       )}
