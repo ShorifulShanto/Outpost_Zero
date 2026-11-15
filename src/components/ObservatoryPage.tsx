@@ -167,7 +167,7 @@ export function ObservatoryPage({
 }: ObservatoryPageProps) {
   const [donkiLoading, setDonkiLoading] = useState(true);
   const [daysWindow, setDaysWindow] = useState<30 | 90>(30);
-  const [donkiTab, setDonkiTab] = useState<'flr' | 'cme'>('flr');
+  const [donkiTab, setDonkiTab] = useState<'flr' | 'cme'>('cme');
   const [flrResult, setFlrResult] = useState<DonkiFetchResult | null>(null);
   const [cmeResult, setCmeResult] = useState<DonkiCmeFetchResult | null>(null);
 

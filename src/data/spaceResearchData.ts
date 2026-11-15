@@ -122,7 +122,7 @@ export const CSA_RESOURCES: CsaResourceEntry[] = [
   {
     id: 'csa-cea',
     topic: 'Space Food & CEA',
-    title: 'Harsh-Climate Space Farming',
+    title: 'Food Production on the Moon & Remote Areas',
     summary:
       'CSA tests compact indoor farms (like Naurvik in Arctic Canada) that grow greens with little water or power.',
     connectionToOutpost:
